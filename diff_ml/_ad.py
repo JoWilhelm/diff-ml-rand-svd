@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 def test():
     """Just a simple test."""
-    return "this is a test of the module"
+    return "dummy change to see that actions work with cache"
 
 
 def mol() -> int:
