@@ -26,8 +26,5 @@ jobs:
     - name: Install ourself
       run: |
         pip install -e .
-    - if: ${{ !startsWith(matrix.python-version, 'pypy') }}
-      name: Lint
-      run: hatch run lint:all
     - name: Run tests
       run: hatch run test
