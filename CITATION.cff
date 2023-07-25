@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+title: Second-Order Differential Machine Learning using Jax
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Neil
+    family-names: Kichler
+    email: neil.kichler@rwth-aachen.de
+    affiliation: RWTH Aachen
+repository-code: 'https://github.com/neilkichler/diff-ml'
+abstract: TODO
+keywords:
+  - jax
+  - differential-machine-learning
+  - neural-networks
+license: MIT
+commit: 34b7e5d40e8a8f64841d126a7c8bd723cea0705e
+version: 0.0.1
+date-released: '2023-07-25'
