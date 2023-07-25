@@ -1,4 +1,4 @@
-name: Ubuntu testing
+name: Ubuntu
 
 on:
   push:
@@ -18,9 +18,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip' # caching pip dependencies
+
     - name: Install hatch
       run: pip install hatch
     - name: Install ourself
