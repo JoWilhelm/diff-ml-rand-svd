@@ -1,14 +1,16 @@
 # Second-Order Differential Machine Learning
 
 ## Installation
+Clone the repo and execute the following inside the root folder.
+
 ```bash
 python -m pip install -e .
 ```
 
-> Requires Python 3.9+, [Jax](https://github.com/google/jax) 0.4.13+ and [Equinox](https://github.com/patrick-kidger/equinox) 0.10.5+.
+> Requires Python 3.9+, [JAX](https://github.com/google/jax) 0.4.13+ and [Equinox](https://github.com/patrick-kidger/equinox) 0.10.5+.
 
 ## Development
-We use [Hatch](https://hatch.pypa.io/) as the build system and environmnent manager. The usual commands apply.
+We use [Hatch](https://hatch.pypa.io/) as the project manager. The usual commands apply.
 
 #### Show all available scripts
 ```bash
