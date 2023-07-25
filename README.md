@@ -1,14 +1,34 @@
 # Second-Order Differential Machine Learning
 
-## Commands
+## Installation
+```bash
+python -m pip install -e .
+```
 
-We use hatch as the build system and environmnent manager:
+> Requires Python 3.9+, [Jax](https://github.com/google/jax) 0.4.13+ and [Equinox](https://github.com/patrick-kidger/equinox) 0.10.5+.
 
-`hatch run lint:fmt`
+## Development
+We use [Hatch](https://hatch.pypa.io/) as the build system and environmnent manager. The usual commands apply.
 
-`hatch run test`
+#### Show all available scripts
+```bash
+hatch env show
+```
+#### Run case study
+```bash
+hatch run python case_studies/bachelier/bachelier.py
+```
+#### Run Tests
+```bash
+hatch run test
+```
+#### Build project wheel
+```bash
+hatch build
+```
+#### Lint project
+```bash
+hatch run lint:fmt
+```
 
-`hatch build`
 
-### System wide install
-`pip install -e .`
