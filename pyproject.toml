@@ -27,7 +27,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "jax>=0.4.13", "jaxlib>=0.4.13", "equinox>=0.10.5", "jaxtyping>=0.2.20",
+    "jax>=0.4.13", "jaxlib>=0.4.13", "equinox>=0.10.5", "jaxtyping>=0.2.20", "polars>=0.18.8"
 ]
 
 [project.urls]
@@ -118,6 +118,8 @@ select = [
   "YTT",
 ]
 ignore = [
+  # Ignore spurious errors in type annotations using strings
+  "F722",
   # Allow non-abstract empty methods in abstract base classes
   "B027",
   # Allow boolean positional values in function calls, like `dict.get(... True)`
@@ -131,6 +133,10 @@ unfixable = [
   # Don't touch unused imports
   "F401",
 ]
+
+[tool.pyright]
+reportIncompatibleMethodOverride = true
+include = ["diff_ml", "tests"]
 
 [tool.ruff.isort]
 known-first-party = ["diff-ml"]
