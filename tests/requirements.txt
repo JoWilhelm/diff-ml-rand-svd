@@ -1,3 +1,5 @@
+equinox
 jaxlib
 jax
 pytest
+beartype

@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax.scipy.stats as jstats
 import numpy as np
-from jaxtyping import ArrayLike, Float, Key
+from jaxtyping import ArrayLike, Float, PRNGKeyArray
 
 import diff_ml as dml
 
@@ -42,7 +42,7 @@ class Bachelier:
     TODO: add iwasawa.us/normal.pdf
     """
 
-    key: Key
+    key: PRNGKeyArray
     params: BachelierParams
 
     def payoff(self):

@@ -8,8 +8,8 @@ def test():
     return "dummy change to see that actions work with cache"
 
 
-def mol() -> int:
-    return 42
+def mol(i: int = 1) -> int:
+    return 42 * i
 
 
 def hvp(f, primals, tangents):
