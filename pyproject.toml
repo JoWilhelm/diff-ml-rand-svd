@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Differential Machine Learning for Jax"
 readme = "README.md"
 requires-python = ">=3.9"
-license = "MIT"
+license = {text = "MIT License"}
 keywords = [
     "jax",
     "differential-machine-learning",
@@ -18,22 +18,24 @@ authors = [
   { name = "Neil Kichler", email = "neil.kichler@gmail.com" },
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
+  "Topic :: Scientific/Engineering",
 ]
 dependencies = [
     "jax>=0.4.13", "jaxlib>=0.4.13", "equinox>=0.10.5", "jaxtyping>=0.2.20", "polars>=0.18.8"
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/neil-kichler/pydiff_ml"
-"Bug Tracker" = "https://github.com/neil-kichler/pydiff_ml/issues"
-"Documentation" = "https://github.com/neil-kichler/pydiff_ml#readme"
+Repository = "https://github.com/neilkichler/diff-ml"
 
 [tool.hatch.version]
 path = "diff_ml/__about__.py"
