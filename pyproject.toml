@@ -124,6 +124,9 @@ select = [
   "YTT",
 ]
 ignore = [
+  "D100",
+  # Ignore missing docstring warning for now
+  "D103",
   # Ignore spurious errors in type annotations using strings
   "F722",
   # Allow non-abstract empty methods in abstract base classes
@@ -139,6 +142,9 @@ unfixable = [
   # Don't touch unused imports
   "F401",
 ]
+
+[tool.ruff.extend-per-file-ignores]
+"tests/**/*" = ["D", "F401"]
 
 [tool.pyright]
 reportIncompatibleMethodOverride = true

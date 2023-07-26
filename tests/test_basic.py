@@ -1,5 +1,4 @@
 import jax.random as jrandom
-import pytest
 
 import diff_ml as dml
 from diff_ml.model import Bachelier, BachelierParams
