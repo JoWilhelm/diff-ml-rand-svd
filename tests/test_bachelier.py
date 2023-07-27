@@ -41,7 +41,6 @@ class TestGenerateCorrelatedSamples:
                         shape=(n_samples,),
                         dtype=np.float32,
                     ),
-                    # "ys": tfds.features.Scalar(np.float64, doc="TODO: ys"),
             })
         )
 
@@ -51,8 +50,10 @@ class TestGenerateCorrelatedSamples:
             overwrite=True
         )
         writer.initialize_splits(["train", "test"])
-        bachelier = Bachelier(key, writer, n_dims=n_dims)
+        bachelier = Bachelier(key, n_dims=n_dims)
         data: dml.DifferentialData = bachelier.generator(n_samples)
+        example = [{"xs": np.asarray(data.xs), "ys": np.asarray(data.ys)}]
+        writer.add_examples({"train": example})
         writer.close_all()
         assert jnp.asarray(data.xs).shape == (1024, 7)
 

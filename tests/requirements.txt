@@ -1,5 +1,7 @@
+beartype
 equinox
 jaxlib
 jax
 pytest
-beartype
+tensorflow
+tensorflow-datasets

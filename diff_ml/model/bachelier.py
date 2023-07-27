@@ -6,7 +6,6 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax.scipy.stats as jstats
 import numpy as np
-import tensorflow_datasets as tfds
 from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray
 
 import diff_ml as dml
@@ -47,7 +46,6 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
-    writer: tfds.core.SequentialWriter
 
     n_dims: int = 1
     t_exposure: float = 1.0
@@ -159,19 +157,8 @@ class Bachelier:
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
-        # name: str
-        # version: utils.Version
-        # data_dir: str
-        # module_name: str
-        # config_name: Optional[str] = None
-        # config_description: Optional[str] = None
-        # config_tags: Optional[List[str]] = None
-        # release_notes: Optional[Dict[str, str]] = None
-        #
-
         data = DifferentialData(spots_1, payoffs_vjp, differentials_vjp)
-        example = [{"xs": np.asarray(data.xs), "ys": np.asarray(payoffs_vjp)}]
-        self.writer.add_examples({"train": example})
+
         return data
 
     def test_generator(self, minval, maxval):
