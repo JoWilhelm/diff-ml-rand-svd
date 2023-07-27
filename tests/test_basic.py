@@ -21,6 +21,5 @@ def test_basic3():
 
 def test_basic4():
     key = jrandom.PRNGKey(0)
-    params = BachelierParams()
-    b = Bachelier(key, params)
-    assert b.params.n_dim == 1
+    b = Bachelier(key)
+    assert b.n_dims == 1

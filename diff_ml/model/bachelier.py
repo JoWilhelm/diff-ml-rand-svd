@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from functools import partial
 
+import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 import jax.scipy.stats as jstats
@@ -7,13 +9,14 @@ import numpy as np
 from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray
 
 import diff_ml as dml
+from diff_ml.model.payoff import EuropeanPayoff
 
 
 @dataclass(eq=True, frozen=True)
 class BachelierParams:
     """Bachelier model parameters."""
 
-    n_dim: int = 1
+    n_dims: int = 1
     t_exposure: float = 1.0
     t_maturity: float = 2.0
     strike_price: float = 1.10
@@ -33,7 +36,7 @@ class DifferentialData:
     zs: Float[ArrayLike, " n"]
 
 
-def generate_correlated_samples(key: PRNGKeyArray, n_samples: int) -> Array:
+def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     """TODO: ."""
     data = jrandom.uniform(key, shape=(2 * n_samples, n_samples), minval=-1.0, maxval=1.0)
     covariance = data.T @ data
@@ -51,18 +54,120 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
-    params: BachelierParams
 
-    def payoff(self):
+    n_dims: int = 1
+    t_exposure: float = 1.0
+    t_maturity: float = 2.0
+    strike_price: float = 1.10
+    # test_set_lb: float = 0.5
+    # test_set_ub: float = 1.5
+    vol_mult: float = 1.5
+    vol_basket: float = 0.2
+
+    @staticmethod
+    def path_simulation():
         """TODO: ."""
         pass
+
+    @staticmethod
+    def payoff_analytic(xs, paths, weights, strike_price):
+        """TODO: ."""
+        spots_end = xs + paths
+        baskets_end = jnp.dot(spots_end, weights)
+        analytic_differentials = jnp.where(baskets_end > strike_price, 1.0, 0.0)
+        analytic_differentials = analytic_differentials.reshape((-1, 1))
+        weights = weights.reshape((1, -1))
+        # TODO: Replace either with jnp.multiply or jnp.matmul.
+        #       Make sure to use the correct one! Here it doesn't
+        #       matter since we have (x, 1) but this makes it clearer
+        #       what the intention behind this operation is.
+        result = analytic_differentials * weights
+        return result
+
+    @staticmethod
+    def payoff(xs, paths, weights, strike_price):
+        """TODO: ."""
+        spots_end = xs + paths
+        baskets_end = jnp.dot(spots_end, weights)
+        pay = EuropeanPayoff.call(baskets_end, strike_price)
+        return pay
+
+    @staticmethod
+    def antithetic_payoff(xs, paths, weights, strike_price):
+        """TODO: ."""
+        spots_end_a = xs + paths
+        baskets_end_a = jnp.dot(spots_end_a, weights)
+        pay_a = EuropeanPayoff.call(baskets_end_a, strike_price)
+
+        spots_end_b = xs - paths
+        baskets_end_b = jnp.dot(spots_end_b, weights)
+        pay_b = EuropeanPayoff.call(baskets_end_b, strike_price)
+
+        pay = 0.5 * (pay_a + pay_b)
+        return pay
 
     def sample(self, n_samples: int) -> DifferentialData:
         """TODO: ."""
         self.key, subkey = jrandom.split(self.key)
         return DifferentialData(np.zeros(n_samples), np.zeros(n_samples), np.zeros(n_samples))
 
-    def generator(self):
+    def generator(self, n_samples: int):
+        """TODO: ."""
+        self.key, subkey = jrandom.split(self.key)
+
+        #  w.l.o.g., initialize spots, i.e. S_0, as all ones
+        spots_0 = jnp.repeat(1.0, self.n_dims)
+
+        # generate random correlation matrix
+        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
+
+        # generate random weights
+        self.key, subkey = jrandom.split(self.key)
+        weights = jrandom.uniform(subkey, shape=(self.n_dims,), minval=1.0, maxval=10.0)
+        weights /= jnp.sum(weights)
+
+        # generate random volatilities
+        self.key, subkey = jrandom.split(self.key)
+        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
+
+        # w.l.o.g., normalize the volatilities for a given volatility of the basket
+        # this helps with plotting the data
+        normalized_vols = (weights * vols).reshape((-1, 1))
+        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
+        vols = vols * self.vol_basket / v
+
+        # jax.debug.print("vols is = {}", vols)
+
+        t_delta = self.t_maturity - self.t_exposure
+
+        # Choleski
+        diag_v = jnp.diag(vols)
+        cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
+        chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
+
+        # increase vols for simulation of xs so we have more samples in the wings
+        chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
+
+        # simulations
+        self.key, subkey = jrandom.split(self.key)
+        normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
+        paths_0 = normal_samples[0, :, :] @ chol_0.T
+        paths_1 = normal_samples[1, :, :] @ chol.T
+
+        # paths_0 = chol_0 @ normal_samples[0]
+        # paths_1 = chol @ normal_samples[1]
+
+        spots_1 = spots_0 + paths_0
+
+        differentials_analytic = Bachelier.payoff_analytic(spots_1, paths_1, weights, self.strike_price)
+
+        payoff_fn = partial(Bachelier.payoff, weights=weights, strike_price=self.strike_price)
+        payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
+        differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.size))[0]
+
+        return spots_1, payoffs_vjp, differentials_analytic, differentials_vjp
+
+    def test_generator(self, minval, maxval):
         """TODO: ."""
         pass
 
