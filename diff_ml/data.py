@@ -1,7 +1,18 @@
-# import random
-# import jax.random as jrandom
+from dataclasses import dataclass
+
 import numpy as np
 import polars as pl
+from jaxtyping import ArrayLike, Float
+
+
+@dataclass
+class DifferentialData:
+    """Differential data."""
+
+    # TODO: maybe just Array instead of ArrayLike?
+    xs: Float[ArrayLike, "n_samples ..."]
+    ys: Float[ArrayLike, "n_samples ..."]
+    zs: Float[ArrayLike, "n_samples ..."]
 
 
 # Function to add random data to the DataFrame

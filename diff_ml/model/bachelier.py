@@ -6,9 +6,11 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax.scipy.stats as jstats
 import numpy as np
+import tensorflow_datasets as tfds
 from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray
 
 import diff_ml as dml
+from diff_ml import DifferentialData
 from diff_ml.model.payoff import EuropeanPayoff
 
 
@@ -25,15 +27,6 @@ class BachelierParams:
     vol_mult: float = 1.5
     vol_bkt: float = 0.2
     anti: bool = False
-
-
-@dataclass
-class DifferentialData:
-    """Differential data."""
-
-    xs: Float[ArrayLike, " n"]
-    ys: Float[ArrayLike, " n"]
-    zs: Float[ArrayLike, " n"]
 
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
@@ -54,6 +47,7 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
+    writer: tfds.core.SequentialWriter
 
     n_dims: int = 1
     t_exposure: float = 1.0
@@ -85,7 +79,7 @@ class Bachelier:
         return result
 
     @staticmethod
-    def payoff(xs, paths, weights, strike_price):
+    def payoff(xs, paths, weights, strike_price) -> Array:
         """TODO: ."""
         spots_end = xs + paths
         baskets_end = jnp.dot(spots_end, weights)
@@ -111,8 +105,12 @@ class Bachelier:
         self.key, subkey = jrandom.split(self.key)
         return DifferentialData(np.zeros(n_samples), np.zeros(n_samples), np.zeros(n_samples))
 
-    def generator(self, n_samples: int):
-        """TODO: ."""
+    def dataloader(self):
+        """Yields from already computed data."""
+        pass
+
+    def generator(self, n_samples: int) -> DifferentialData:
+        """Generates new data on the fly."""
         self.key, subkey = jrandom.split(self.key)
 
         #  w.l.o.g., initialize spots, i.e. S_0, as all ones
@@ -120,6 +118,9 @@ class Bachelier:
 
         # generate random correlation matrix
         correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
+
+        # TODO: consider using cupy for random number generation in MC simulation
+        #       in general we should extract the random number generator to be agnostic
 
         # generate random weights
         self.key, subkey = jrandom.split(self.key)
@@ -130,13 +131,11 @@ class Bachelier:
         self.key, subkey = jrandom.split(self.key)
         vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
 
-        # w.l.o.g., normalize the volatilities for a given volatility of the basket
-        # this helps with plotting the data
+        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
+        # It makes plotting the data more convenient.
         normalized_vols = (weights * vols).reshape((-1, 1))
         v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
         vols = vols * self.vol_basket / v
-
-        # jax.debug.print("vols is = {}", vols)
 
         t_delta = self.t_maturity - self.t_exposure
 
@@ -151,21 +150,29 @@ class Bachelier:
         # simulations
         self.key, subkey = jrandom.split(self.key)
         normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
-        paths_0 = normal_samples[0, :, :] @ chol_0.T
-        paths_1 = normal_samples[1, :, :] @ chol.T
-
-        # paths_0 = chol_0 @ normal_samples[0]
-        # paths_1 = chol @ normal_samples[1]
-
+        paths_0 = normal_samples[0] @ chol_0.T
+        paths_1 = normal_samples[1] @ chol.T
         spots_1 = spots_0 + paths_0
 
-        differentials_analytic = Bachelier.payoff_analytic(spots_1, paths_1, weights, self.strike_price)
-
+        Bachelier.payoff_analytic(spots_1, paths_1, weights, self.strike_price)
         payoff_fn = partial(Bachelier.payoff, weights=weights, strike_price=self.strike_price)
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
-        differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.size))[0]
+        differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
-        return spots_1, payoffs_vjp, differentials_analytic, differentials_vjp
+        # name: str
+        # version: utils.Version
+        # data_dir: str
+        # module_name: str
+        # config_name: Optional[str] = None
+        # config_description: Optional[str] = None
+        # config_tags: Optional[List[str]] = None
+        # release_notes: Optional[Dict[str, str]] = None
+        #
+
+        data = DifferentialData(spots_1, payoffs_vjp, differentials_vjp)
+        example = [{"xs": np.asarray(data.xs), "ys": np.asarray(payoffs_vjp)}]
+        self.writer.add_examples({"train": example})
+        return data
 
     def test_generator(self, minval, maxval):
         """TODO: ."""

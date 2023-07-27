@@ -1,0 +1,21 @@
+{
+  "description": "Bachelier Dataset with Differential Data.",
+  "fileFormat": "tfrecord",
+  "moduleName": "diff_ml_bachelier",
+  "name": "bachelier",
+  "splits": [
+    {
+      "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
+      "name": "train",
+      "numBytes": "32808",
+      "shardLengths": [
+        "1"
+      ]
+    },
+    {
+      "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
+      "name": "test"
+    }
+  ],
+  "version": "1.0.0"
+}

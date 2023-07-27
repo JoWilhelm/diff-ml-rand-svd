@@ -17,9 +17,3 @@ def test_basic2():
 
 def test_basic3():
     assert dml.mol() == 42
-
-
-def test_basic4():
-    key = jrandom.PRNGKey(0)
-    b = Bachelier(key)
-    assert b.n_dims == 1
