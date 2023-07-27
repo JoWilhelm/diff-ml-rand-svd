@@ -1,7 +1,0 @@
-beartype
-equinox
-jaxlib
-jax
-pytest
-tensorflow
-tensorflow-datasets

@@ -14,5 +14,5 @@ install:
 	python -m pip install -e .
 
 test:
-	hatch run test
+	hatch -e test run test
 

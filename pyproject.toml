@@ -44,13 +44,19 @@ Repository = "https://github.com/neilkichler/diff-ml"
 [tool.hatch.version]
 path = "diff_ml/__about__.py"
 
-[tool.hatch.envs.default]
+[tool.hatch.build]
+include = ["diff_ml/*"]
+
+[tool.hatch.envs.test]
 dependencies = [
   "beartype",
   "coverage[toml]>=6.5",
   "pytest",
+  "tensorflow",
+  "tensorflow-datasets",
 ]
-[tool.hatch.envs.default.scripts]
+
+[tool.hatch.envs.test.scripts]
 test = "pytest {args:tests}"
 test-cov = "coverage run -m pytest {args:tests}"
 cov-report = [
@@ -62,11 +68,11 @@ cov = [
   "cov-report",
 ]
 
+[[tool.hatch.envs.test.matrix]]
+python = ["3.9", "3.10", "3.11"]
+
 [tool.pytest.ini_options]
 addopts = "--jaxtyping-packages=diff_ml,equinox,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))"
-
-[[tool.hatch.envs.all.matrix]]
-python = ["3.9", "3.10", "3.11"]
 
 [tool.hatch.envs.lint]
 detached = true

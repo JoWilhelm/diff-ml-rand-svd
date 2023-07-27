@@ -29,4 +29,4 @@ jobs:
       run: |
         pip install -e .
     - name: Run tests
-      run: hatch run test
+      run: hatch --env test run test
