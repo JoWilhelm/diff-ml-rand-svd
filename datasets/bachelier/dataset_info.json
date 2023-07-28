@@ -14,7 +14,11 @@
     },
     {
       "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
-      "name": "test"
+      "name": "test",
+      "numBytes": "65536",
+      "shardLengths": [
+        "1024"
+      ]
     }
   ],
   "supervisedKeys": {

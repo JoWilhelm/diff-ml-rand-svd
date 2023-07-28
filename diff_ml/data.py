@@ -1,18 +1,19 @@
-from dataclasses import dataclass
+from typing import TypedDict
 
 import numpy as np
 import polars as pl
 from jaxtyping import ArrayLike, Float
 
 
-@dataclass
-class DifferentialData:
+class DifferentialData(TypedDict):
     """Differential data."""
 
     # TODO: maybe just Array instead of ArrayLike?
-    xs: Float[ArrayLike, "n_samples ..."]
-    ys: Float[ArrayLike, "n_samples ..."]
-    zs: Float[ArrayLike, "n_samples ..."]
+    # xs: Float[ArrayLike, "n_samples ..."]
+    # ys: Float[ArrayLike, "n_samples ..."]
+    # zs: Float[ArrayLike, "n_samples ..."]
+    spot: Float[ArrayLike, "n_samples ..."]
+    payoff: Float[ArrayLike, "n_samples ..."]
 
 
 # Function to add random data to the DataFrame
@@ -29,7 +30,7 @@ def add_random_data_to_dataframe(df, num_rows: int = 100):
 
         df_b = pl.DataFrame([xs_pl, ys_pl, dys_pl])
         df.extend(df_b)
-        print(df)
+        # print(df)
 
         # print(new_xs_pl)
         # df["xs"] = df["xs"].append(new_xs_pl)
@@ -60,7 +61,7 @@ def print_df():
     # df = add_random_data_to_dataframe(subkey, df, 5)
     df = add_random_data_to_dataframe(df, 5)
     df_sample = df.sample(5)
-    print(df_sample)
+    # print(df_sample)
     df_sample.to_numpy()
 
-    print(df)
+    # print(df)

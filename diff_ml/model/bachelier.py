@@ -6,26 +6,11 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax.scipy.stats as jstats
 import numpy as np
-from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
 import diff_ml as dml
 from diff_ml import DifferentialData
 from diff_ml.model.payoff import EuropeanPayoff
-
-
-@dataclass(eq=True, frozen=True)
-class BachelierParams:
-    """Bachelier model parameters."""
-
-    n_dims: int = 1
-    t_exposure: float = 1.0
-    t_maturity: float = 2.0
-    strike_price: float = 1.10
-    test_set_lb: float = 0.5
-    test_set_ub: float = 1.5
-    vol_mult: float = 1.5
-    vol_bkt: float = 0.2
-    anti: bool = False
 
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
@@ -40,19 +25,30 @@ def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
 class Bachelier:
     """Bachelier model.
 
-    Reference: https://en.wikipedia.org/wiki/Bachelier_model
+    References:
+        https://en.wikipedia.org/wiki/Bachelier_model
 
-    TODO: add iwasawa.us/normal.pdf
+        https://iwasawa.us/normal.pdf
+
+    Attributes:
+        key: a key for the random number generator of jax.
+        weights: an array of weights indicating the importance
+            of each dimension of the spots.
+        n_dims: number of dimensions. A dimension usually corresponds to an asset price.
+        t_exposure: the start time you get exposed to the option.
+        t_maturity: the time the option will expire, i.e. reach its maturity.
+        strike_price: the strike price, often refered to as $K$.
+        vol_mult: the volatility multiplier. If above 1, more data will be generated on the wings.
+        vol_basket: the volatility of the basket. Used to normalize the volatilities.
     """
 
     key: PRNGKeyArray
+    weights: Float[Array, " n_dims"]
 
     n_dims: int = 1
     t_exposure: float = 1.0
     t_maturity: float = 2.0
     strike_price: float = 1.10
-    # test_set_lb: float = 0.5
-    # test_set_ub: float = 1.5
     vol_mult: float = 1.5
     vol_basket: float = 0.2
 
@@ -77,7 +73,12 @@ class Bachelier:
         return result
 
     @staticmethod
-    def payoff(xs, paths, weights, strike_price) -> Array:
+    def payoff(
+        xs: Float[Array, "n_samples n_dims"],
+        paths: Float[Array, "n_samples n_dims"],
+        weights: Float[Array, " n_dims"],
+        strike_price: Float[ScalarLike, ""],
+    ) -> Float[Array, " n_samples"]:
         """TODO: ."""
         spots_end = xs + paths
         baskets_end = jnp.dot(spots_end, weights)
@@ -85,7 +86,12 @@ class Bachelier:
         return pay
 
     @staticmethod
-    def antithetic_payoff(xs, paths, weights, strike_price):
+    def antithetic_payoff(
+        xs: Float[Array, "n_samples n_dims"],
+        paths: Float[Array, "n_samples n_dims"],
+        weights: Float[Array, " n_dims"],
+        strike_price: Float[ScalarLike, ""],
+    ) -> Float[Array, " n_samples"]:
         """TODO: ."""
         spots_end_a = xs + paths
         baskets_end_a = jnp.dot(spots_end_a, weights)
@@ -101,7 +107,7 @@ class Bachelier:
     def sample(self, n_samples: int) -> DifferentialData:
         """TODO: ."""
         self.key, subkey = jrandom.split(self.key)
-        return DifferentialData(np.zeros(n_samples), np.zeros(n_samples), np.zeros(n_samples))
+        return {"spot": np.zeros(n_samples), "payoff": np.zeros(n_samples)}
 
     def dataloader(self):
         """Yields from already computed data."""
@@ -117,13 +123,11 @@ class Bachelier:
         # generate random correlation matrix
         correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
 
+        # scale weights to sum up to 1
+        self.weights /= jnp.sum(self.weights)
+
         # TODO: consider using cupy for random number generation in MC simulation
         #       in general we should extract the random number generator to be agnostic
-
-        # generate random weights
-        self.key, subkey = jrandom.split(self.key)
-        weights = jrandom.uniform(subkey, shape=(self.n_dims,), minval=1.0, maxval=10.0)
-        weights /= jnp.sum(weights)
 
         # generate random volatilities
         self.key, subkey = jrandom.split(self.key)
@@ -131,7 +135,7 @@ class Bachelier:
 
         # W.l.o.g., normalize the volatilities for a given volatility of the basket.
         # It makes plotting the data more convenient.
-        normalized_vols = (weights * vols).reshape((-1, 1))
+        normalized_vols = (self.weights * vols).reshape((-1, 1))
         v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
         vols = vols * self.vol_basket / v
 
@@ -152,18 +156,14 @@ class Bachelier:
         paths_1 = normal_samples[1] @ chol.T
         spots_1 = spots_0 + paths_0
 
-        Bachelier.payoff_analytic(spots_1, paths_1, weights, self.strike_price)
-        payoff_fn = partial(Bachelier.payoff, weights=weights, strike_price=self.strike_price)
+        differentials_analytic = Bachelier.payoff_analytic(spots_1, paths_1, self.weights, self.strike_price)
+        payoff_fn = partial(Bachelier.payoff, weights=self.weights, strike_price=self.strike_price)
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
-        data = DifferentialData(spots_1, payoffs_vjp, differentials_vjp)
+        assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
 
-        return data
-
-    def test_generator(self, minval, maxval):
-        """TODO: ."""
-        pass
+        return {"spot": spots_1, "payoff": payoffs_vjp}
 
     class AnalyticalCall:
         """Analytical solution of Bachelier."""
@@ -255,6 +255,45 @@ class Bachelier:
             """
             d = (spot - strike) / (vol * jnp.sqrt(t))
             return jnp.sqrt(t) * jstats.norm.pdf(d)
+
+        @staticmethod
+        def greeks(spot, strike, vol, t):
+            r"""Greeks.
+
+            As in 5.1 of https://arxiv.org/pdf/2104.08686.pdf.
+
+            Args:
+                spot: an array of spot prices, also denoted as $S_0$.
+                strike: an array of strike prices, also denoted as $K$.
+                vol: volatility, also denoted as $\sigma_N$.
+                t: time to maturity, also denoted as $T - t$ or $T$.
+
+
+            Returns:
+                TODO
+            """
+            deltas = Bachelier.AnalyticalCall.delta(spot, strike, vol, t)
+            gammas = Bachelier.AnalyticalCall.gamma(spot, strike, vol, t)
+            vegas = Bachelier.AnalyticalCall.vega(spot, strike, vol, t)
+            return deltas, gammas, vegas
+
+    def test_generator(self, n_samples, minval=0.5, maxval=1.5) -> DifferentialData:
+        """TODO: ."""
+        # adjust lower and upper for dimension
+        adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
+        adj_lower = 1.0 - (1.0 - minval) * adj
+        adj_upper = 1.0 + (maxval - 1.0) * adj
+
+        # draw random spots within range
+        self.key, subkey = jrandom.split(self.key)
+        spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
+        baskets = jnp.dot(spots, self.weights).reshape((-1, 1))
+        time_to_maturity = self.t_maturity - self.t_exposure
+        prices = Bachelier.AnalyticalCall.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+        prices = prices.reshape((-1,))
+        # prices = prices.reshape((-1, 1))
+        # greeks = Bachelier.AnalyticalCall.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+        return {"spot": spots, "payoff": prices}
 
 
 def main():
