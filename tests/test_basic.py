@@ -1,7 +1,6 @@
 import jax.random as jrandom
 
 import diff_ml as dml
-from diff_ml.model import Bachelier, BachelierParams
 
 
 # import diff_ml.model
