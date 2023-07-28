@@ -7,9 +7,9 @@
     {
       "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
       "name": "train",
-      "numBytes": "32808",
+      "numBytes": "65536",
       "shardLengths": [
-        "1"
+        "1024"
       ]
     },
     {
@@ -17,5 +17,17 @@
       "name": "test"
     }
   ],
+  "supervisedKeys": {
+    "tuple": {
+      "items": [
+        {
+          "featureKey": "spot"
+        },
+        {
+          "featureKey": "payoff"
+        }
+      ]
+    }
+  },
   "version": "1.0.0"
 }

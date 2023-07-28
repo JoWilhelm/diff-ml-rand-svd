@@ -21,6 +21,7 @@ class TestGenerateCorrelatedSamples:
         key = jrandom.PRNGKey(0)
         n_samples = 1024
         n_dims = 7
+        n_batch = 128
 
         ds_identity = tfds.core.DatasetIdentity(
             name="bachelier",
@@ -32,30 +33,46 @@ class TestGenerateCorrelatedSamples:
         ds_info = tfds.core.DatasetInfo(
             builder=ds_identity,
             description="Bachelier Dataset with Differential Data.",
-            features = tfds.features.FeaturesDict({
-                    "xs": tfds.features.Tensor(
-                        shape=(n_samples, n_dims),
+            features=tfds.features.FeaturesDict(
+                {
+                    "spot": tfds.features.Tensor(
+                        shape=(n_dims,),
                         dtype=np.float32,
                     ),
-                    "ys": tfds.features.Tensor(
-                        shape=(n_samples,),
+                    "payoff": tfds.features.Scalar(
                         dtype=np.float32,
                     ),
-            })
+                }
+            ),
+            supervised_keys=("spot", "payoff"),
         )
 
-        writer = tfds.core.SequentialWriter(
-            ds_info=ds_info,
-            max_examples_per_shard=n_samples,
-            overwrite=True
-        )
+        writer = tfds.core.SequentialWriter(ds_info=ds_info, max_examples_per_shard=n_samples, overwrite=True)
         writer.initialize_splits(["train", "test"])
         bachelier = Bachelier(key, n_dims=n_dims)
         data: dml.DifferentialData = bachelier.generator(n_samples)
-        example = [{"xs": np.asarray(data.xs), "ys": np.asarray(data.ys)}]
-        writer.add_examples({"train": example})
+        d = {"spot": np.asarray(data.xs), "payoff": np.asarray(data.ys)}
+        examples = [{k: v[i] for k, v in d.items()} for i in range(n_samples)]
+
+        writer.add_examples({"train": examples})
         writer.close_all()
-        assert jnp.asarray(data.xs).shape == (1024, 7)
+        assert jnp.asarray(data.xs).shape == (n_samples, n_dims)
+
+        ds_builder = tfds.builder_from_directory("datasets/bachelier")
+        ds = ds_builder.as_dataset(split="train", batch_size=n_batch, as_supervised=True).repeat().shuffle(1024)
+
+        np_arrays = tfds.as_numpy(ds)
+        for xs, ys in np_arrays:
+            assert xs.shape == (n_batch, n_dims)
+            assert ys.shape == (n_batch,)
+            break
+
+        ds_all = ds_builder.as_dataset(split="train", as_supervised=True)
+        np_all = tfds.as_numpy(ds_all)
+
+        for i, (xs, ys) in enumerate(np_all):
+            assert np.allclose(xs, d["spot"][i])
+            assert np.allclose(ys, d["payoff"][i])
 
 
 if __name__ == "__main__":

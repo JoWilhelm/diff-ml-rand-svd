@@ -2,12 +2,11 @@
     "pythonClassName": "tensorflow_datasets.core.features.features_dict.FeaturesDict",
     "featuresDict": {
         "features": {
-            "xs": {
+            "spot": {
                 "pythonClassName": "tensorflow_datasets.core.features.tensor_feature.Tensor",
                 "tensor": {
                     "shape": {
                         "dimensions": [
-                            "1024",
                             "7"
                         ]
                     },
@@ -15,14 +14,10 @@
                     "encoding": "none"
                 }
             },
-            "ys": {
-                "pythonClassName": "tensorflow_datasets.core.features.tensor_feature.Tensor",
+            "payoff": {
+                "pythonClassName": "tensorflow_datasets.core.features.scalar.Scalar",
                 "tensor": {
-                    "shape": {
-                        "dimensions": [
-                            "1024"
-                        ]
-                    },
+                    "shape": {},
                     "dtype": "float32",
                     "encoding": "none"
                 }
