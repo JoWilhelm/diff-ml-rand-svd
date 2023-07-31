@@ -1,3 +1,5 @@
+import typing
+
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
@@ -40,8 +42,7 @@ class TestGenerateCorrelatedSamples:
             citation=citation,
             version="1.1.0",
         )
-        # TODO: Try out DatasetBuilder instead
-        ds = Dataset.from_dict(data, info=ds_info)
+        ds = Dataset.from_dict(dict(data), info=ds_info)
         device = str(jax.devices()[0])
         ds = ds.with_format("jax", device=device)
         ds_iter = ds.iter(batch_size=n_batch)
@@ -49,10 +50,13 @@ class TestGenerateCorrelatedSamples:
 
         # load data that we just saved and compare
         ds_loaded = load_from_disk("datasets/bachelier/arrow")
+        ds_loaded = typing.cast(Dataset, ds_loaded)
         ds_loaded_iter = ds_loaded.iter(batch_size=n_batch)
         for _ in range(2):
             batch = next(ds_iter)
-            batch_loaded = next(ds_loaded_iter)
+            batch = typing.cast(dict, batch)
+            batch_loaded = dict(next(ds_loaded_iter))
+            batch_loaded = typing.cast(dict, batch_loaded)
             x, y = batch["spot"], batch["payoff"]
             x_loaded, y_loaded = batch_loaded["spot"], batch_loaded["payoff"]
             assert jnp.allclose(x, x_loaded)
@@ -88,13 +92,6 @@ class TestGenerateCorrelatedSamples:
             supervised_keys=("spot", "payoff"),
         )
 
-        # ds_info.file_format = tfds.core.FileFormat.ARRAY_RECORD
-
-        # ds_info.set_file_format(
-        #     file_format="array_record",# tfds.core.FileFormat.ARRAY_RECORD,
-        #     override=True
-        # )
-
         writer = tfds.core.SequentialWriter(  # pyright: ignore
             ds_info=ds_info, max_examples_per_shard=n_samples, overwrite=True
         )
@@ -112,10 +109,10 @@ class TestGenerateCorrelatedSamples:
         assert jnp.asarray(data["spot"]).shape == (n_samples, n_dims)
 
         ds_builder = tfds.builder_from_directory("datasets/bachelier")
-        ds = ds_builder.as_dataset(split="train", batch_size=n_batch, as_supervised=True).repeat().shuffle(1024)
-        # ds = ds_builder.as_data_source(split="train") # .repeat().shuffle(1024)
+        ds = ds_builder.as_dataset(split="train", batch_size=n_batch, as_supervised=True)
 
         np_arrays = tfds.as_numpy(ds)
+        np_arrays = typing.cast(typing.Iterable, np_arrays)
         for xs, ys in np_arrays:
             assert xs.shape == (n_batch, n_dims)
             assert ys.shape == (n_batch,)
@@ -123,6 +120,7 @@ class TestGenerateCorrelatedSamples:
 
         ds_all = ds_builder.as_dataset(split="train", as_supervised=True)
         np_all = tfds.as_numpy(ds_all)
+        np_all = typing.cast(typing.Iterable, np_all)
 
         spots = np.asarray(data["spot"])
         payoffs = np.asarray(data["payoff"])
@@ -177,10 +175,9 @@ class TestGenerateCorrelatedSamples:
 
         ds_builder = tfds.builder_from_directory("datasets/bachelier")
 
-        # ds_all = ds_builder.as_data_source(split="test") # .repeat().shuffle(1024)
-
         ds_all = ds_builder.as_dataset(split="test", as_supervised=True)
         np_all = tfds.as_numpy(ds_all)
+        np_all = typing.cast(typing.Iterable, np_all)
 
         spots = np.asarray(data["spot"])
         payoffs = np.asarray(data["payoff"])
