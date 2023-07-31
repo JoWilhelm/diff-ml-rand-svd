@@ -107,7 +107,9 @@ class Bachelier:
     def sample(self, n_samples: int) -> DifferentialData:
         """TODO: ."""
         self.key, subkey = jrandom.split(self.key)
-        return {"spot": np.zeros(n_samples), "payoff": np.zeros(n_samples)}
+        return {"spot": np.zeros(n_samples),
+                "payoff": np.zeros(n_samples),
+                "differentials": np.zeros(n_samples)}
 
     def dataloader(self):
         """Yields from already computed data."""
@@ -163,7 +165,7 @@ class Bachelier:
 
         assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
 
-        return {"spot": spots_1, "payoff": payoffs_vjp}
+        return {"spot": spots_1, "payoff": payoffs_vjp, "differentials": differentials_vjp}
 
     class AnalyticalCall:
         """Analytical solution of Bachelier."""
@@ -292,8 +294,10 @@ class Bachelier:
         prices = Bachelier.AnalyticalCall.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
         prices = prices.reshape((-1,))
         # prices = prices.reshape((-1, 1))
-        # greeks = Bachelier.AnalyticalCall.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
-        return {"spot": spots, "payoff": prices}
+
+        # in analytical solution we directly compute greeks w.r.t. the basket price
+        greeks = Bachelier.AnalyticalCall.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+        return {"spot": spots, "payoff": prices, "differentials": greeks[0].reshape((-1,))}
 
 
 def main():

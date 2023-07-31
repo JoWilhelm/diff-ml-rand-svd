@@ -14,6 +14,7 @@ class DifferentialData(TypedDict):
     # zs: Float[ArrayLike, "n_samples ..."]
     spot: Float[ArrayLike, "n_samples ..."]
     payoff: Float[ArrayLike, "n_samples ..."]
+    differentials: Float[ArrayLike, "n_samples ..."]
 
 
 # Function to add random data to the DataFrame

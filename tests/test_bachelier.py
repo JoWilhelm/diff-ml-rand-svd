@@ -62,18 +62,23 @@ class TestGenerateCorrelatedSamples:
             assert jnp.allclose(x, x_loaded)
             assert jnp.allclose(y, y_loaded)
 
-    def test_generator(self):
-        key = jrandom.PRNGKey(0)
-        n_samples = 1024
-        n_dims = 7
-        n_batch = 128
-
+    def tf_bachelier_info(self) -> tfds.core.DatasetInfo:
         ds_identity = tfds.core.DatasetIdentity(  # pyright: ignore
             name="bachelier",
             version="1.0.0",
             data_dir="datasets/bachelier",
             module_name="diff_ml_bachelier",
         )
+
+        return ds_identity
+
+    def test_generator(self):
+        key = jrandom.PRNGKey(0)
+        n_samples = 1024
+        n_dims = 7
+        n_batch = 128
+
+        ds_identity = self.tf_bachelier_info()
 
         ds_info = tfds.core.DatasetInfo(  # pyright: ignore
             builder=ds_identity,
@@ -87,9 +92,13 @@ class TestGenerateCorrelatedSamples:
                     "payoff": tfds.features.Scalar(
                         dtype=np.float32,
                     ),
+                    "differentials": tfds.features.Tensor(
+                        shape=(n_dims,),
+                        dtype=np.float32
+                    )
                 }
             ),
-            supervised_keys=("spot", "payoff"),
+            supervised_keys=("spot", ("payoff", "differentials")),
         )
 
         writer = tfds.core.SequentialWriter(  # pyright: ignore
@@ -113,9 +122,10 @@ class TestGenerateCorrelatedSamples:
 
         np_arrays = tfds.as_numpy(ds)
         np_arrays = typing.cast(typing.Iterable, np_arrays)
-        for xs, ys in np_arrays:
+        for xs, (ys, zs) in np_arrays:
             assert xs.shape == (n_batch, n_dims)
             assert ys.shape == (n_batch,)
+            assert zs.shape == (n_batch, n_dims)
             break
 
         ds_all = ds_builder.as_dataset(split="train", as_supervised=True)
@@ -124,21 +134,18 @@ class TestGenerateCorrelatedSamples:
 
         spots = np.asarray(data["spot"])
         payoffs = np.asarray(data["payoff"])
-        for i, (xs, ys) in enumerate(np_all):
+        differentials = np.asarray(data["differentials"])
+        for i, (xs, (ys, zs)) in enumerate(np_all):
             assert np.allclose(xs, spots[i])
             assert np.allclose(ys, payoffs[i])
+            assert np.allclose(zs, differentials[i])
 
     def test_generator_testdata(self):
         key = jrandom.PRNGKey(0)
         n_samples = 1024
         n_dims = 7
 
-        ds_identity = tfds.core.DatasetIdentity(  # pyright: ignore
-            name="bachelier",
-            version="1.0.0",
-            data_dir="datasets/bachelier",
-            module_name="diff_ml_bachelier",
-        )
+        ds_identity = self.tf_bachelier_info()
 
         ds_info = tfds.core.DatasetInfo(  # pyright: ignore
             builder=ds_identity,
@@ -152,13 +159,16 @@ class TestGenerateCorrelatedSamples:
                     "payoff": tfds.features.Scalar(
                         dtype=np.float32,
                     ),
+                    "differentials": tfds.features.Scalar(
+                        dtype=np.float32
+                    )
                 }
             ),
-            supervised_keys=("spot", "payoff"),
+            supervised_keys=("spot", ("payoff", "differentials")),
         )
 
         writer = tfds.core.SequentialWriter(  # pyright: ignore
-            ds_info=ds_info, max_examples_per_shard=n_samples, overwrite=False
+            ds_info=ds_info, max_examples_per_shard=n_samples, overwrite=True
         )
 
         writer.initialize_splits(["test"])
@@ -181,9 +191,11 @@ class TestGenerateCorrelatedSamples:
 
         spots = np.asarray(data["spot"])
         payoffs = np.asarray(data["payoff"])
-        for i, (xs, ys) in enumerate(np_all):
+        differentials = np.asarray(data["differentials"])
+        for i, (xs, (ys, zs)) in enumerate(np_all):
             assert np.allclose(xs, spots[i])
             assert np.allclose(ys, payoffs[i])
+            assert np.allclose(zs, differentials[i])
 
 
 if __name__ == "__main__":
