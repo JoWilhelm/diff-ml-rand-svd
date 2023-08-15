@@ -16,3 +16,8 @@ install:
 test:
 	hatch -e test run test
 
+bachelier:
+	hatch -e examples run python examples/bachelier/bachelier.py
+
+data:
+	hatch -e test run python tests/test_bachelier.py
