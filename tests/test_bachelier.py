@@ -1,4 +1,6 @@
 import typing
+from functools import partial
+from itertools import islice
 
 import jax
 import jax.numpy as jnp
@@ -7,9 +9,26 @@ import numpy as np
 import tensorflow_datasets as tfds
 
 import diff_ml as dml
-from datasets import Dataset, DatasetInfo, load_from_disk
+from datasets import Dataset, DatasetInfo, IterableDataset, load_from_disk
 from diff_ml.model import Bachelier, generate_correlation_matrix
 
+
+def bachelier_ds_info() -> DatasetInfo:
+    citation = r"""@misc{dataset:bachelier,
+        author = {Neil Kichler},
+        title = {{Dataset of a Bachelier model for a 7-dimensional basket option},
+        howpublished= {\url{https://github.com/neilkichler/diff-ml/tree/main/datasets/bachelier}}
+    """
+
+    ds_info = DatasetInfo(
+        description="Example data of a Bachelier model for a 7-dimensional basket option.",
+        homepage="https://github.com/neilkichler/diff-ml/tree/main/datasets/bachelier",
+        license="MIT License",
+        citation=citation,
+        version="1.1.0",
+    )
+
+    return ds_info
 
 class TestGenerateCorrelatedSamples:
     def test_generate_correlated_samples(self):
@@ -17,6 +36,35 @@ class TestGenerateCorrelatedSamples:
         n_samples = 1024
         samples = generate_correlation_matrix(key, n_samples)
         assert samples.shape == (n_samples, n_samples)
+
+    def test_generator_to_ds_iter(self):
+        key = jrandom.PRNGKey(0)
+        n_samples = 1024
+        n_dims = 7
+        n_batch = 8
+
+        key, subkey = jrandom.split(key)
+        weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
+        bachelier = Bachelier(key, n_dims, weights)
+
+        # using Dataset.from_generator
+        data_gen = partial(bachelier.generator, n_precompute=n_samples)
+        # data_gen_slice = islice(data_gen(), n_iter)
+
+        # def gen():
+        #     yield next(data_gen_slice)
+            # yield {"key": "value", "other_key": "other_value"}
+
+        ds_gen = Dataset.from_generator(generator=data_gen)
+        ds_gen = typing.cast(Dataset, ds_gen)
+        device = str(jax.devices()[0])
+        ds_gen_jax = ds_gen.with_format("jax", device=device)
+        ds_gen_iter = ds_gen_jax.iter(batch_size=n_batch)
+        for _ in range(2):
+            d = next(ds_gen_iter)
+            xs_train = d["spot"]
+            assert(xs_train.shape == (n_batch, n_dims))
+
 
     def test_generator_to_ds(self):
         key = jrandom.PRNGKey(0)
@@ -26,22 +74,12 @@ class TestGenerateCorrelatedSamples:
 
         key, subkey = jrandom.split(key)
         weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
-        bachelier = Bachelier(key, weights, n_dims=n_dims)
-        data: dml.DifferentialData = bachelier.generator(n_samples)
+        bachelier = Bachelier(key, n_dims, weights)
+        data = bachelier.sample(n_samples)
 
-        citation = r"""@misc{dataset:bachelier,
-            author = {Neil Kichler},
-            title = {{Dataset of a Bachelier model for a 7-dimensional basket option},
-            howpublished= {\url{https://github.com/neilkichler/diff-ml/tree/main/datasets/bachelier}}
-        """
+        ds_info = bachelier_ds_info()
 
-        ds_info = DatasetInfo(
-            description="Example data of a Bachelier model for a 7-dimensional basket option.",
-            homepage="https://github.com/neilkichler/diff-ml/tree/main/datasets/bachelier",
-            license="MIT License",
-            citation=citation,
-            version="1.1.0",
-        )
+        # using Dataset.from_dict
         ds = Dataset.from_dict(dict(data), info=ds_info)
         device = str(jax.devices()[0])
         ds = ds.with_format("jax", device=device)
@@ -62,7 +100,8 @@ class TestGenerateCorrelatedSamples:
             assert jnp.allclose(x, x_loaded)
             assert jnp.allclose(y, y_loaded)
 
-    def tf_bachelier_info(self) -> tfds.core.DatasetInfo:
+
+    def tf_bachelier_info(self):
         ds_identity = tfds.core.DatasetIdentity(  # pyright: ignore
             name="bachelier",
             version="1.0.0",
@@ -109,8 +148,8 @@ class TestGenerateCorrelatedSamples:
 
         key, subkey = jrandom.split(key)
         weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
-        bachelier = Bachelier(key, weights, n_dims=n_dims)
-        data: dml.DifferentialData = bachelier.generator(n_samples)
+        bachelier = Bachelier(key, n_dims, weights)
+        data = bachelier.sample(n_samples=n_samples)
         examples = [{k: np.asarray(v)[i] for k, v in data.items()} for i in range(n_samples)]
 
         writer.add_examples({"train": examples})
@@ -175,7 +214,7 @@ class TestGenerateCorrelatedSamples:
 
         key, subkey = jrandom.split(key)
         weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
-        bachelier = Bachelier(key, weights, n_dims=n_dims)
+        bachelier = Bachelier(key, n_dims, weights)
         data = bachelier.test_generator(n_samples)
         examples = [{k: np.asarray(v)[i] for k, v in data.items()} for i in range(n_samples)]
 
@@ -199,4 +238,4 @@ class TestGenerateCorrelatedSamples:
 
 
 if __name__ == "__main__":
-    TestGenerateCorrelatedSamples().test_generator()
+    TestGenerateCorrelatedSamples().test_generator_to_ds()

@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from dataclasses import dataclass
 from functools import partial
 
@@ -21,7 +22,8 @@ def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     return jnp.linalg.multi_dot([inv_vols, covariance, inv_vols])
 
 
-@dataclass
+# TODO: seperate the analytic part into a seperate class
+# @dataclass
 class Bachelier:
     """Bachelier model.
 
@@ -32,9 +34,9 @@ class Bachelier:
 
     Attributes:
         key: a key for the random number generator of jax.
+        n_dims: number of dimensions. A dimension usually corresponds to an asset price.
         weights: an array of weights indicating the importance
             of each dimension of the spots.
-        n_dims: number of dimensions. A dimension usually corresponds to an asset price.
         t_exposure: the start time you get exposed to the option.
         t_maturity: the time the option will expire, i.e. reach its maturity.
         strike_price: the strike price, often refered to as $K$.
@@ -43,14 +45,29 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
+    n_dims: int
     weights: Float[Array, " n_dims"]
 
-    n_dims: int = 1
     t_exposure: float = 1.0
     t_maturity: float = 2.0
     strike_price: float = 1.10
     vol_mult: float = 1.5
     vol_basket: float = 0.2
+    use_antithetic: bool = True
+
+    def __init__(self, key, n_dims, weights):
+        """TODO: ."""
+        self.key = key
+        self.n_dims = n_dims
+
+        # scale weights to sum up to 1
+        self.weights = weights / jnp.sum(weights)
+
+        self.use_antithetic = False
+
+    def baskets(self, spots):
+        """TODO: ."""
+        return jnp.dot(spots, self.weights).reshape((-1, 1))
 
     @staticmethod
     def path_simulation():
@@ -58,7 +75,7 @@ class Bachelier:
         pass
 
     @staticmethod
-    def payoff_analytic(xs, paths, weights, strike_price):
+    def payoff_analytic_differentials(xs, paths, weights, strike_price):
         """TODO: ."""
         spots_end = xs + paths
         baskets_end = jnp.dot(spots_end, weights)
@@ -71,6 +88,19 @@ class Bachelier:
         #       what the intention behind this operation is.
         result = analytic_differentials * weights
         return result
+
+    @staticmethod
+    def payoff_antithetic_analytic_differentials(xs, paths, weights, strike_price):
+        """TODO: ."""
+        spots_end_a = xs + paths
+        baskets_end_a = jnp.dot(spots_end_a, weights)
+        spots_end_b = xs - paths
+        baskets_end_b = jnp.dot(spots_end_b, weights)
+
+        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape((-1,1)) * weights.reshape((1,-1))
+        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape((-1,1)) * weights.reshape((1,-1))
+        differentials = 0.5 * (differentials_a + differentials_b)
+        return differentials
 
     @staticmethod
     def payoff(
@@ -107,26 +137,11 @@ class Bachelier:
     def sample(self, n_samples: int) -> DifferentialData:
         """TODO: ."""
         self.key, subkey = jrandom.split(self.key)
-        return {"spot": np.zeros(n_samples),
-                "payoff": np.zeros(n_samples),
-                "differentials": np.zeros(n_samples)}
-
-    def dataloader(self):
-        """Yields from already computed data."""
-        pass
-
-    def generator(self, n_samples: int) -> DifferentialData:
-        """Generates new data on the fly."""
-        self.key, subkey = jrandom.split(self.key)
-
         #  w.l.o.g., initialize spots, i.e. S_0, as all ones
         spots_0 = jnp.repeat(1.0, self.n_dims)
 
         # generate random correlation matrix
         correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
-
-        # scale weights to sum up to 1
-        self.weights /= jnp.sum(self.weights)
 
         # TODO: consider using cupy for random number generation in MC simulation
         #       in general we should extract the random number generator to be agnostic
@@ -158,14 +173,57 @@ class Bachelier:
         paths_1 = normal_samples[1] @ chol.T
         spots_1 = spots_0 + paths_0
 
-        differentials_analytic = Bachelier.payoff_analytic(spots_1, paths_1, self.weights, self.strike_price)
-        payoff_fn = partial(Bachelier.payoff, weights=self.weights, strike_price=self.strike_price)
+        if self.use_antithetic:
+            analytic_differentials_fn = Bachelier.payoff_antithetic_analytic_differentials
+            payoff_fn = Bachelier.antithetic_payoff
+        else:
+            analytic_differentials_fn = Bachelier.payoff_analytic_differentials
+            payoff_fn = Bachelier.payoff
+
+        differentials_analytic = analytic_differentials_fn(spots_1, paths_1, self.weights, self.strike_price)
+        payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
+
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
         assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
 
         return {"spot": spots_1, "payoff": payoffs_vjp, "differentials": differentials_vjp}
+
+    def dataloader(self):
+        """Yields from already computed data."""
+        pass
+
+    def batch_generator(self, n_batch: int):
+        """Generates a batch of data on the fly."""
+        while True:
+            yield self.sample(n_batch)
+
+    def generator(self, n_precompute: int) -> Generator[DifferentialData, None, None]:
+        """Generates new data on the fly.
+
+        Note that this generator continues forever. The `n_precompute` parameter is only
+        used to control the number of samples that are computed at once. The generator
+        will then yield `n_precompute` times before computing the next set of data points.
+
+        Args:
+            n_precompute: number of samples to generate at once.
+
+        Yields:
+            A DifferentialData object.
+        """
+        n_iter = 10
+        while n_iter:
+            samples = self.sample(n_precompute)
+            keys = samples.keys()
+
+            for i in range(n_precompute):
+                ith_sample = [v[i] for v in samples.values()]
+                res = DifferentialData(dict(zip(keys, ith_sample)))
+                yield res
+
+            n_iter -= 1
+
 
     class AnalyticalCall:
         """Analytical solution of Bachelier."""

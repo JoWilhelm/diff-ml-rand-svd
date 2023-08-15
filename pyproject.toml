@@ -47,6 +47,12 @@ path = "diff_ml/__about__.py"
 [tool.hatch.build]
 include = ["diff_ml/*"]
 
+[tool.hatch.envs.examples]
+dependencies = [
+  "beartype",
+  "matplotlib>=3.7.1",
+]
+
 [tool.hatch.envs.test]
 dependencies = [
   "beartype",
