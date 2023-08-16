@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from typing import TypeAlias
+from typing_extensions import TypeAlias
 
 import numpy as np
 import polars as pl
