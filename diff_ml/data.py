@@ -1,20 +1,14 @@
-from typing import TypedDict
+from collections.abc import Generator
+from typing import TypeAlias
 
 import numpy as np
 import polars as pl
-from jaxtyping import ArrayLike, Float
+from jaxtyping import Array, Float
 
 
-class DifferentialData(TypedDict):
-    """Differential data."""
+Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 
-    # TODO: maybe just Array instead of ArrayLike?
-    # xs: Float[ArrayLike, "n_samples ..."]
-    # ys: Float[ArrayLike, "n_samples ..."]
-    # zs: Float[ArrayLike, "n_samples ..."]
-    spot: Float[ArrayLike, "n_samples ..."]
-    payoff: Float[ArrayLike, "n_samples ..."]
-    differentials: Float[ArrayLike, "n_samples ..."]
+DataGenerator: TypeAlias = Generator[Data, None, None]
 
 
 # Function to add random data to the DataFrame

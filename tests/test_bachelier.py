@@ -1,6 +1,5 @@
 import typing
 from functools import partial
-from itertools import islice
 
 import jax
 import jax.numpy as jnp
@@ -8,9 +7,12 @@ import jax.random as jrandom
 import numpy as np
 import tensorflow_datasets as tfds
 
-import diff_ml as dml
-from datasets import Dataset, DatasetInfo, IterableDataset, load_from_disk
+from datasets import Dataset, DatasetInfo, load_from_disk
+from diff_ml import DataGenerator
 from diff_ml.model import Bachelier, generate_correlation_matrix
+
+
+# from itertools import islice
 
 
 def bachelier_ds_info() -> DatasetInfo:
@@ -29,6 +31,7 @@ def bachelier_ds_info() -> DatasetInfo:
     )
 
     return ds_info
+
 
 class TestGenerateCorrelatedSamples:
     def test_generate_correlated_samples(self):
@@ -51,20 +54,15 @@ class TestGenerateCorrelatedSamples:
         data_gen = partial(bachelier.generator, n_precompute=n_samples)
         # data_gen_slice = islice(data_gen(), n_iter)
 
-        # def gen():
-        #     yield next(data_gen_slice)
-            # yield {"key": "value", "other_key": "other_value"}
-
         ds_gen = Dataset.from_generator(generator=data_gen)
         ds_gen = typing.cast(Dataset, ds_gen)
         device = str(jax.devices()[0])
         ds_gen_jax = ds_gen.with_format("jax", device=device)
-        ds_gen_iter = ds_gen_jax.iter(batch_size=n_batch)
+        ds_gen_iter = typing.cast(DataGenerator, ds_gen_jax.iter(batch_size=n_batch))
         for _ in range(2):
             d = next(ds_gen_iter)
             xs_train = d["spot"]
-            assert(xs_train.shape == (n_batch, n_dims))
-
+            assert xs_train.shape == (n_batch, n_dims)
 
     def test_generator_to_ds(self):
         key = jrandom.PRNGKey(0)
@@ -100,7 +98,6 @@ class TestGenerateCorrelatedSamples:
             assert jnp.allclose(x, x_loaded)
             assert jnp.allclose(y, y_loaded)
 
-
     def tf_bachelier_info(self):
         ds_identity = tfds.core.DatasetIdentity(  # pyright: ignore
             name="bachelier",
@@ -131,10 +128,7 @@ class TestGenerateCorrelatedSamples:
                     "payoff": tfds.features.Scalar(
                         dtype=np.float32,
                     ),
-                    "differentials": tfds.features.Tensor(
-                        shape=(n_dims,),
-                        dtype=np.float32
-                    )
+                    "differentials": tfds.features.Tensor(shape=(n_dims,), dtype=np.float32),
                 }
             ),
             supervised_keys=("spot", ("payoff", "differentials")),
@@ -198,9 +192,7 @@ class TestGenerateCorrelatedSamples:
                     "payoff": tfds.features.Scalar(
                         dtype=np.float32,
                     ),
-                    "differentials": tfds.features.Scalar(
-                        dtype=np.float32
-                    )
+                    "differentials": tfds.features.Scalar(dtype=np.float32),
                 }
             ),
             supervised_keys=("spot", ("payoff", "differentials")),
@@ -215,7 +207,7 @@ class TestGenerateCorrelatedSamples:
         key, subkey = jrandom.split(key)
         weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
         bachelier = Bachelier(key, n_dims, weights)
-        data = bachelier.test_generator(n_samples)
+        data = bachelier.analytic(n_samples)
         examples = [{k: np.asarray(v)[i] for k, v in data.items()} for i in range(n_samples)]
 
         writer.add_examples({"test": examples})

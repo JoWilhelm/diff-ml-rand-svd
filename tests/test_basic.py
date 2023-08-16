@@ -1,9 +1,4 @@
-import jax.random as jrandom
-
 import diff_ml as dml
-
-
-# import diff_ml.model
 
 
 def test_basic():

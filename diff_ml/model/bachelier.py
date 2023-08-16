@@ -1,16 +1,14 @@
-from collections.abc import Generator
-from dataclasses import dataclass
 from functools import partial
+from typing import Final
 
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 import jax.scipy.stats as jstats
-import numpy as np
 from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
 import diff_ml as dml
-from diff_ml import DifferentialData
+from diff_ml import Data, DataGenerator
 from diff_ml.model.payoff import EuropeanPayoff
 
 
@@ -45,7 +43,7 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
-    n_dims: int
+    n_dims: Final[int]
     weights: Float[Array, " n_dims"]
 
     t_exposure: float = 1.0
@@ -97,8 +95,8 @@ class Bachelier:
         spots_end_b = xs - paths
         baskets_end_b = jnp.dot(spots_end_b, weights)
 
-        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape((-1,1)) * weights.reshape((1,-1))
-        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape((-1,1)) * weights.reshape((1,-1))
+        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
+        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
         differentials = 0.5 * (differentials_a + differentials_b)
         return differentials
 
@@ -134,7 +132,7 @@ class Bachelier:
         pay = 0.5 * (pay_a + pay_b)
         return pay
 
-    def sample(self, n_samples: int) -> DifferentialData:
+    def sample(self, n_samples: int) -> Data:
         """TODO: ."""
         self.key, subkey = jrandom.split(self.key)
         #  w.l.o.g., initialize spots, i.e. S_0, as all ones
@@ -192,6 +190,7 @@ class Bachelier:
 
     def dataloader(self):
         """Yields from already computed data."""
+        # TODO: Implement
         pass
 
     def batch_generator(self, n_batch: int):
@@ -199,7 +198,7 @@ class Bachelier:
         while True:
             yield self.sample(n_batch)
 
-    def generator(self, n_precompute: int) -> Generator[DifferentialData, None, None]:
+    def generator(self, n_precompute: int) -> DataGenerator:
         """Generates new data on the fly.
 
         Note that this generator continues forever. The `n_precompute` parameter is only
@@ -210,23 +209,40 @@ class Bachelier:
             n_precompute: number of samples to generate at once.
 
         Yields:
-            A DifferentialData object.
+            A Data object.
         """
-        n_iter = 10
-        while n_iter:
+        while True:
             samples = self.sample(n_precompute)
             keys = samples.keys()
+            values = samples.values()
 
             for i in range(n_precompute):
-                ith_sample = [v[i] for v in samples.values()]
-                res = DifferentialData(dict(zip(keys, ith_sample)))
-                yield res
+                ith_sample = (v[i] for v in values)
+                sample = dict(zip(keys, ith_sample))
+                yield sample
 
-            n_iter -= 1
+    def analytic(self, n_samples, minval=0.5, maxval=1.5) -> Data:
+        """TODO: ."""
+        # adjust lower and upper for dimension
+        adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
+        adj_lower = 1.0 - (1.0 - minval) * adj
+        adj_upper = 1.0 + (maxval - 1.0) * adj
 
+        # draw random spots within range
+        self.key, subkey = jrandom.split(self.key)
+        spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
+        baskets = jnp.dot(spots, self.weights).reshape((-1, 1))
+        time_to_maturity = self.t_maturity - self.t_exposure
+        prices = Bachelier.Call.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+        prices = prices.reshape((-1,))
+        # prices = prices.reshape((-1, 1))
 
-    class AnalyticalCall:
-        """Analytical solution of Bachelier."""
+        # in analytical solution we directly compute greeks w.r.t. the basket price
+        greeks = Bachelier.Call.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+        return {"spot": spots, "payoff": prices, "differentials": greeks[0].reshape((-1,))}
+
+    class Call:
+        """Analytic solutions to price and greeks (delta, gamma, vega) of call option on Bachelier."""
 
         @staticmethod
         def price(spot, strike, vol, t):
@@ -252,7 +268,7 @@ class Bachelier:
             return price
 
         @staticmethod
-        def delta(spot, strike, vol, t):
+        def delta(spot, strike, vol, t) -> Array:
             r"""Analytical delta.
 
             The delta is the derivative of the price sensitivity w.r.t. the spot price.
@@ -273,7 +289,7 @@ class Bachelier:
             return jstats.norm.cdf(d)
 
         @staticmethod
-        def gamma(spot, strike, vol, t):
+        def gamma(spot, strike, vol, t) -> Array:
             r"""Analytical gamma.
 
             The gamma is the 2nd-order derivative of the price
@@ -295,7 +311,7 @@ class Bachelier:
             return jstats.norm.pdf(d) / (vol * jnp.sqrt(t))
 
         @staticmethod
-        def vega(spot, strike, vol, t):
+        def vega(spot, strike, vol, t) -> Array:
             r"""Analytical vega.
 
             The vega is the 2nd-order derivative of the price
@@ -317,7 +333,7 @@ class Bachelier:
             return jnp.sqrt(t) * jstats.norm.pdf(d)
 
         @staticmethod
-        def greeks(spot, strike, vol, t):
+        def greeks(spot, strike, vol, t) -> tuple[Array, Array, Array]:
             r"""Greeks.
 
             As in 5.1 of https://arxiv.org/pdf/2104.08686.pdf.
@@ -332,30 +348,11 @@ class Bachelier:
             Returns:
                 TODO
             """
-            deltas = Bachelier.AnalyticalCall.delta(spot, strike, vol, t)
-            gammas = Bachelier.AnalyticalCall.gamma(spot, strike, vol, t)
-            vegas = Bachelier.AnalyticalCall.vega(spot, strike, vol, t)
+            call = Bachelier.Call
+            deltas = call.delta(spot, strike, vol, t)
+            gammas = call.gamma(spot, strike, vol, t)
+            vegas = call.vega(spot, strike, vol, t)
             return deltas, gammas, vegas
-
-    def test_generator(self, n_samples, minval=0.5, maxval=1.5) -> DifferentialData:
-        """TODO: ."""
-        # adjust lower and upper for dimension
-        adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
-        adj_lower = 1.0 - (1.0 - minval) * adj
-        adj_upper = 1.0 + (maxval - 1.0) * adj
-
-        # draw random spots within range
-        self.key, subkey = jrandom.split(self.key)
-        spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
-        baskets = jnp.dot(spots, self.weights).reshape((-1, 1))
-        time_to_maturity = self.t_maturity - self.t_exposure
-        prices = Bachelier.AnalyticalCall.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
-        prices = prices.reshape((-1,))
-        # prices = prices.reshape((-1, 1))
-
-        # in analytical solution we directly compute greeks w.r.t. the basket price
-        greeks = Bachelier.AnalyticalCall.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
-        return {"spot": spots, "payoff": prices, "differentials": greeks[0].reshape((-1,))}
 
 
 def main():
