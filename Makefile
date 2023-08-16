@@ -21,3 +21,6 @@ bachelier:
 
 data:
 	hatch -e test run python tests/test_bachelier.py
+
+fmt:
+	hatch -e lint run all

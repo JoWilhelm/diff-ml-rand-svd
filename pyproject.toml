@@ -85,11 +85,9 @@ addopts = "--jaxtyping-packages=diff_ml,equinox,beartype.beartype(conf=beartype.
 detached = true
 dependencies = [
   "black>=23.1.0",
-  "pyright>=1.1.318",
   "ruff>=0.0.243",
 ]
 [tool.hatch.envs.lint.scripts]
-typing = "pyright {args:diff_ml tests}"
 style = [
   "ruff {args:.}",
   "black --check --diff {args:.}",
