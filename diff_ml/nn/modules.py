@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 from jax import jit
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray
 
 
 Model = Callable[[Array, Optional[PRNGKeyArray]], Array]
@@ -25,7 +25,7 @@ class MakeScalar(eqx.Module):
 
     def __call__(self, *args, **kwargs):
         out = self.model(*args, **kwargs)
-        if out.shape[-1] != 1:
+        if len(out.shape) != 1 or out.shape[-1] != 1:
             msg = "The model must return an array with a single element for MakeScalar to be applicable."
             raise ValueError(msg)
 
@@ -38,28 +38,33 @@ class Normalization(eqx.Module):
     Similar to `Normalization` layer of Keras.
     """
 
-    mean: float
-    std: float
+    mean: Float[Array, ""]
+    std: Float[Array, ""]
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
         return (x - self.mean) / self.std
 
 
 class Denormalization(eqx.Module):
     """Preprocessing layer to denormalize data to original scale."""
 
-    mean: float
-    std: float
+    mean: Float[Array, ""]
+    std: Float[Array, ""]
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
         return x * self.std + self.mean
 
 
 class Normalized(eqx.Module):
     seq: eqx.nn.Sequential
 
-    def __init__(self, x_normalizer: Normalization, model: eqx.nn.MLP, y_denormalizer: Denormalization):
-        self.seq = eqx.nn.Sequential(x_normalizer, model, y_denormalizer)
+    def __init__(
+        self,
+        x_normalizer: Normalization,
+        model: eqx.Module,
+        y_denormalizer: Denormalization,
+    ):
+        self.seq = eqx.nn.Sequential(layers=(x_normalizer, model, y_denormalizer))
 
     def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
         return self.seq(x, key=key)

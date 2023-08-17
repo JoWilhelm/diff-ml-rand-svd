@@ -14,7 +14,9 @@ from diff_ml.model.payoff import EuropeanPayoff
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     """TODO: ."""
-    data = jrandom.uniform(key, shape=(2 * n_samples, n_samples), minval=-1.0, maxval=1.0)
+    data = jrandom.uniform(
+        key, shape=(2 * n_samples, n_samples), minval=-1.0, maxval=1.0
+    )
     covariance = data.T @ data
     inv_vols = jnp.diag(1.0 / jnp.sqrt(jnp.diagonal(covariance)))
     return jnp.linalg.multi_dot([inv_vols, covariance, inv_vols])
@@ -95,8 +97,12 @@ class Bachelier:
         spots_end_b = xs - paths
         baskets_end_b = jnp.dot(spots_end_b, weights)
 
-        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
-        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
+        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape(
+            (-1, 1)
+        ) * weights.reshape((1, -1))
+        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape(
+            (-1, 1)
+        ) * weights.reshape((1, -1))
         differentials = 0.5 * (differentials_a + differentials_b)
         return differentials
 
@@ -151,7 +157,11 @@ class Bachelier:
         # W.l.o.g., normalize the volatilities for a given volatility of the basket.
         # It makes plotting the data more convenient.
         normalized_vols = (self.weights * vols).reshape((-1, 1))
-        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
+        v = jnp.sqrt(
+            jnp.linalg.multi_dot(
+                [normalized_vols.T, correlated_samples, normalized_vols]
+            ).reshape(1)
+        )
         vols = vols * self.vol_basket / v
 
         t_delta = self.t_maturity - self.t_exposure
@@ -172,21 +182,31 @@ class Bachelier:
         spots_1 = spots_0 + paths_0
 
         if self.use_antithetic:
-            analytic_differentials_fn = Bachelier.payoff_antithetic_analytic_differentials
+            analytic_differentials_fn = (
+                Bachelier.payoff_antithetic_analytic_differentials
+            )
             payoff_fn = Bachelier.antithetic_payoff
         else:
             analytic_differentials_fn = Bachelier.payoff_analytic_differentials
             payoff_fn = Bachelier.payoff
 
-        differentials_analytic = analytic_differentials_fn(spots_1, paths_1, self.weights, self.strike_price)
-        payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
+        differentials_analytic = analytic_differentials_fn(
+            spots_1, paths_1, self.weights, self.strike_price
+        )
+        payoff_fn = partial(
+            payoff_fn, weights=self.weights, strike_price=self.strike_price
+        )
 
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
         assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
 
-        return {"spot": spots_1, "payoff": payoffs_vjp, "differentials": differentials_vjp}
+        return {
+            "spot": spots_1,
+            "payoff": payoffs_vjp,
+            "differentials": differentials_vjp,
+        }
 
     def dataloader(self):
         """Yields from already computed data."""
@@ -230,16 +250,26 @@ class Bachelier:
 
         # draw random spots within range
         self.key, subkey = jrandom.split(self.key)
-        spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
+        spots = jrandom.uniform(
+            subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper
+        )
         baskets = jnp.dot(spots, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
-        prices = Bachelier.Call.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+        prices = Bachelier.Call.price(
+            baskets, self.strike_price, self.vol_basket, time_to_maturity
+        )
         prices = prices.reshape((-1,))
         # prices = prices.reshape((-1, 1))
 
         # in analytical solution we directly compute greeks w.r.t. the basket price
-        greeks = Bachelier.Call.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
-        return {"spot": spots, "payoff": prices, "differentials": greeks[0].reshape((-1,))}
+        greeks = Bachelier.Call.greeks(
+            baskets, self.strike_price, self.vol_basket, time_to_maturity
+        )
+        return {
+            "spot": spots,
+            "payoff": prices,
+            "differentials": greeks[0].reshape((-1,)),
+        }
 
     class Call:
         """Analytic solutions to price and greeks (delta, gamma, vega) of call option on Bachelier."""

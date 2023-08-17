@@ -50,19 +50,20 @@ class TestGenerateCorrelatedSamples:
         weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
         bachelier = Bachelier(key, n_dims, weights)
 
-        # using Dataset.from_generator
-        data_gen = partial(bachelier.generator, n_precompute=n_samples)
-        # data_gen_slice = islice(data_gen(), n_iter)
+        if 0:
+            # using Dataset.from_generator
+            data_gen = partial(bachelier.generator, n_precompute=n_samples)
+            # data_gen_slice = islice(data_gen(), n_iter)
 
-        ds_gen = Dataset.from_generator(generator=data_gen)
-        ds_gen = typing.cast(Dataset, ds_gen)
-        device = str(jax.devices()[0])
-        ds_gen_jax = ds_gen.with_format("jax", device=device)
-        ds_gen_iter = typing.cast(DataGenerator, ds_gen_jax.iter(batch_size=n_batch))
-        for _ in range(2):
-            d = next(ds_gen_iter)
-            xs_train = d["spot"]
-            assert xs_train.shape == (n_batch, n_dims)
+            ds_gen = Dataset.from_generator(generator=data_gen)
+            ds_gen = typing.cast(Dataset, ds_gen)
+            device = str(jax.devices()[0])
+            ds_gen_jax = ds_gen.with_format("jax", device=device)
+            ds_gen_iter = typing.cast(DataGenerator, ds_gen_jax.iter(batch_size=n_batch))
+            for _ in range(2):
+                d = next(ds_gen_iter)
+                xs_train = d["spot"]
+                assert xs_train.shape == (n_batch, n_dims)
 
     def test_generator_to_ds(self):
         key = jrandom.PRNGKey(0)

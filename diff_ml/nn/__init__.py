@@ -8,6 +8,7 @@ from diff_ml.nn.modules import (
     Normalization,
     Normalized,
 )
+from diff_ml.nn.train import train
 
 
 __all__ = [
