@@ -12,26 +12,6 @@ from jaxtyping import Array, Float, PRNGKeyArray
 Model = Callable[[Array, Optional[PRNGKeyArray]], Array]
 
 
-class MakeScalar(eqx.Module):
-    """Turn the output of a model to a scalar.
-
-    It allows for a model to be used in jax.grad and similar
-    functions of jax requiring a function with a scalar output.
-    This only works if the output of the model is an `Array` with
-    a single element.
-    """
-
-    model: Model
-
-    def __call__(self, *args, **kwargs):
-        out = self.model(*args, **kwargs)
-        if len(out.shape) != 1 or out.shape[-1] != 1:
-            msg = "The model must return an array with a single element for MakeScalar to be applicable."
-            raise ValueError(msg)
-
-        return jnp.reshape(out, ())
-
-
 class Normalization(eqx.Module):
     """Preprocessing layer to receive normalized input.
 

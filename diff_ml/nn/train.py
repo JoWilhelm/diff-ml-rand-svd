@@ -28,7 +28,7 @@ from diff_ml.nn.modules import MakeScalar
 def loss_fn(
     model, x, y
 ):
-    pred_y = vmap(MakeScalar(model))(x)
+    pred_y = vmap(model)(x)
     pred_y = pred_y[:, jnp.newaxis]
     result = loss.mse(y, pred_y)
     return result

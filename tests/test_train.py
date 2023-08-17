@@ -70,7 +70,7 @@ class TestTrain:
         mlp = eqx.nn.MLP(
             key=subkey,
             in_size=n_dims,
-            out_size=1,
+            out_size="scalar",
             width_size=20,
             depth=3,
             activation=jax.nn.elu,
