@@ -9,7 +9,6 @@ from jaxtyping import Array, Float, Int, PyTree
 
 from diff_ml import Data, DataGenerator
 from diff_ml.nn import loss
-from diff_ml.nn.modules import MakeScalar
 
 
 # from diff_ml.nn.loss import mse, rmse
