@@ -1,8 +1,7 @@
-# diff_ml
+# Notebooks on (Second-Order) Differential Machine Learning
 
-On Windows:
-tensorflow 2.10
-
-tensorflow-probability 0.18
-
-jax 0.3.25
+## Requirements
+### on Windows:
+```tensorflow 2.10```
+```tensorflow-probability 0.18```
+```jax 0.3.25```
