@@ -1,5 +1,4 @@
-# Notebooks on (Second-Order) Differential Machine Learning
-
+# Notebooks on (Second-Order) Differential ML
 ## Requirements
 ### on Windows:
 ```tensorflow 2.10```
