@@ -18,7 +18,7 @@ hatch env show
 ```
 #### Run case study
 ```bash
-hatch run python case_studies/bachelier/bachelier.py
+hatch run python examples/bachelier/bachelier.py
 ```
 #### Run Tests
 ```bash
