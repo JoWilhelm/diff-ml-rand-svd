@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -155,10 +154,3 @@ cython_debug/
 
 # VS Code
 .vscode/
-=======
-*.ipynb_checkpoints*
-*.pdf*
-*.pgf*
-*tmp*
-*.zip
->>>>>>> diff_ml_notebooks/main
