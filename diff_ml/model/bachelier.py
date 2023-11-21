@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from functools import partial
 from typing import Final
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
@@ -14,16 +16,19 @@ from diff_ml.model.payoff import EuropeanPayoff
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     """TODO: ."""
-    data = jrandom.uniform(
-        key, shape=(2 * n_samples, n_samples), minval=-1.0, maxval=1.0
-    )
+    data = jrandom.uniform(key, shape=(2 * n_samples, n_samples), minval=-1.0, maxval=1.0)
     covariance = data.T @ data
     inv_vols = jnp.diag(1.0 / jnp.sqrt(jnp.diagonal(covariance)))
     return jnp.linalg.multi_dot([inv_vols, covariance, inv_vols])
 
 
+class Basket:
+    """TODO: ."""
+
+
 # TODO: seperate the analytic part into a seperate class
-# @dataclass
+# TODO: seperate the basket aspect out of the model
+@dataclass
 class Bachelier:
     """Bachelier model.
 
@@ -36,7 +41,7 @@ class Bachelier:
         key: a key for the random number generator of jax.
         n_dims: number of dimensions. A dimension usually corresponds to an asset price.
         weights: an array of weights indicating the importance
-            of each dimension of the spots.
+            of each dimension of the spots, i.e. the weight of the asset in the basket.
         t_exposure: the start time you get exposed to the option.
         t_maturity: the time the option will expire, i.e. reach its maturity.
         strike_price: the strike price, often refered to as $K$.
@@ -63,7 +68,7 @@ class Bachelier:
         # scale weights to sum up to 1
         self.weights = weights / jnp.sum(weights)
 
-        self.use_antithetic = False
+        # self.use_antithetic = False
 
     def baskets(self, spots):
         """TODO: ."""
@@ -97,12 +102,8 @@ class Bachelier:
         spots_end_b = xs - paths
         baskets_end_b = jnp.dot(spots_end_b, weights)
 
-        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape(
-            (-1, 1)
-        ) * weights.reshape((1, -1))
-        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape(
-            (-1, 1)
-        ) * weights.reshape((1, -1))
+        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
+        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
         differentials = 0.5 * (differentials_a + differentials_b)
         return differentials
 
@@ -140,11 +141,12 @@ class Bachelier:
 
     def sample(self, n_samples: int) -> Data:
         """TODO: ."""
-        self.key, subkey = jrandom.split(self.key)
         #  w.l.o.g., initialize spots, i.e. S_0, as all ones
         spots_0 = jnp.repeat(1.0, self.n_dims)
 
         # generate random correlation matrix
+        # TODO: Do we want external keys for sampling?
+        self.key, subkey = jrandom.split(self.key)
         correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
 
         # TODO: consider using cupy for random number generation in MC simulation
@@ -157,11 +159,7 @@ class Bachelier:
         # W.l.o.g., normalize the volatilities for a given volatility of the basket.
         # It makes plotting the data more convenient.
         normalized_vols = (self.weights * vols).reshape((-1, 1))
-        v = jnp.sqrt(
-            jnp.linalg.multi_dot(
-                [normalized_vols.T, correlated_samples, normalized_vols]
-            ).reshape(1)
-        )
+        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
         vols = vols * self.vol_basket / v
 
         t_delta = self.t_maturity - self.t_exposure
@@ -182,20 +180,14 @@ class Bachelier:
         spots_1 = spots_0 + paths_0
 
         if self.use_antithetic:
-            analytic_differentials_fn = (
-                Bachelier.payoff_antithetic_analytic_differentials
-            )
+            analytic_differentials_fn = Bachelier.payoff_antithetic_analytic_differentials
             payoff_fn = Bachelier.antithetic_payoff
         else:
             analytic_differentials_fn = Bachelier.payoff_analytic_differentials
             payoff_fn = Bachelier.payoff
 
-        differentials_analytic = analytic_differentials_fn(
-            spots_1, paths_1, self.weights, self.strike_price
-        )
-        payoff_fn = partial(
-            payoff_fn, weights=self.weights, strike_price=self.strike_price
-        )
+        differentials_analytic = analytic_differentials_fn(spots_1, paths_1, self.weights, self.strike_price)
+        payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
 
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
@@ -250,25 +242,23 @@ class Bachelier:
 
         # draw random spots within range
         self.key, subkey = jrandom.split(self.key)
-        spots = jrandom.uniform(
-            subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper
-        )
+        spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
         baskets = jnp.dot(spots, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
-        prices = Bachelier.Call.price(
-            baskets, self.strike_price, self.vol_basket, time_to_maturity
-        )
+        prices = Bachelier.Call.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
         prices = prices.reshape((-1,))
         # prices = prices.reshape((-1, 1))
 
         # in analytical solution we directly compute greeks w.r.t. the basket price
-        greeks = Bachelier.Call.greeks(
-            baskets, self.strike_price, self.vol_basket, time_to_maturity
-        )
+        greeks = Bachelier.Call.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+
+        # TODO: generalize
+        deltas = greeks[0] @ self.weights.reshape((1, -1))
+
         return {
             "spot": spots,
             "payoff": prices,
-            "differentials": greeks[0].reshape((-1,)),
+            "differentials": deltas,
         }
 
     class Call:

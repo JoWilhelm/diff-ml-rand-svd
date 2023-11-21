@@ -18,4 +18,5 @@ __all__ = [
     "Model",
     "Normalization",
     "Normalized",
+    "train"
 ]
