@@ -24,3 +24,6 @@ data:
 
 fmt:
 	hatch -e lint run all
+
+edit:
+	hatch -e example run nvim
