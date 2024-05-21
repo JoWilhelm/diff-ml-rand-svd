@@ -1,6 +1,6 @@
 from diff_ml.ad import hmp, hvp, mol, test
 from diff_ml.data import Data, DataGenerator, print_df
-from diff_ml.nn import train
+from diff_ml.nn import Denormalization, Model, Normalization, Normalized, train
 
 
 __all__ = [
@@ -11,5 +11,9 @@ __all__ = [
     "print_df",
     "Data",
     "DataGenerator",
-    "train"
+    "train",
+    "Model",
+    "Denormalization",
+    "Normalization",
+    "Normalized",
 ]

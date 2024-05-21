@@ -50,14 +50,21 @@ def train(
     train_loss = jnp.zeros(1)
 
     for epoch in range(n_epochs):
-        for batch in islice(train_data, 3):
+        for batch in islice(train_data, 32): # number of batches per epoch
             model, opt_state, train_loss = train_step(model, opt_state, batch)
+
+            print("optstate: ", opt_state[0].mu.layers[1].layers[1].weight)
+            print("optstate: ", opt_state[0].nu.layers[1].layers[1].weight)
+            # print("optstate: ", opt_state[0].mu)
+            # print("optstate: ", opt_state[0].nu)
+            # print("optstate: ", opt_state)
 
 
         epoch_stats = f"Finished epoch {epoch:3d} | Train Loss: {train_loss:.5f}"
 
         if test_data:
             test_loss = jnp.sqrt(loss_fn(model, test_data["spot"], test_data["payoff"]))
+            # test_loss = jnp.sqrt(evaluate(model, test_data, loss_fn))
             print(f"{epoch_stats} | Test Loss: {test_loss:.5f}")
         else:
             print(epoch_stats)

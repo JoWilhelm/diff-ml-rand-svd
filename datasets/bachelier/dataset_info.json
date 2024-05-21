@@ -6,19 +6,7 @@
   "splits": [
     {
       "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
-      "name": "train",
-      "numBytes": "65536",
-      "shardLengths": [
-        "1024"
-      ]
-    },
-    {
-      "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
-      "name": "test",
-      "numBytes": "65536",
-      "shardLengths": [
-        "1024"
-      ]
+      "name": "test"
     }
   ],
   "supervisedKeys": {
@@ -28,7 +16,16 @@
           "featureKey": "spot"
         },
         {
-          "featureKey": "payoff"
+          "tuple": {
+            "items": [
+              {
+                "featureKey": "payoff"
+              },
+              {
+                "featureKey": "differentials"
+              }
+            ]
+          }
         }
       ]
     }

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Final
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
@@ -62,13 +61,15 @@ class Bachelier:
 
     def __init__(self, key, n_dims, weights):
         """TODO: ."""
+        if n_dims != len(weights):
+            val = f"Mismatch in number of dimensions ({n_dims}) and number of weights ({weights}) given."
+            raise ValueError(val)
+
         self.key = key
         self.n_dims = n_dims
 
         # scale weights to sum up to 1
         self.weights = weights / jnp.sum(weights)
-
-        # self.use_antithetic = False
 
     def baskets(self, spots):
         """TODO: ."""
@@ -164,7 +165,7 @@ class Bachelier:
 
         t_delta = self.t_maturity - self.t_exposure
 
-        # Choleski
+        # Cholesky
         diag_v = jnp.diag(vols)
         cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
