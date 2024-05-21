@@ -15,6 +15,7 @@ def main():
     path = pathlib.Path(__file__).parent.absolute()
     output_folder_name = "result"
     prefix_path = f"{path}/{output_folder_name}"
+    pathlib.Path(prefix_path).mkdir(parents=True, exist_ok=True)
 
     key = jrandom.PRNGKey(0)
     n_dims: int = 7
