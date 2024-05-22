@@ -8,7 +8,7 @@ import jax.random as jrandom
 import numpy as np
 import optax
 import tensorflow_datasets as tfds
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray
 
 import diff_ml as dml
 import diff_ml.nn as dnn
@@ -16,6 +16,13 @@ from datasets import Dataset, DatasetInfo, load_from_disk
 from diff_ml import Data, DataGenerator
 from diff_ml.model import Bachelier, generate_correlation_matrix
 from diff_ml.nn import init_model_weights
+
+
+def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
+    xs, ys = batch["spot"], batch["payoff"]
+    pred_ys = eqx.filter_vmap(model)(xs)
+    result = dml.mse(ys, pred_ys)
+    return result
 
 
 class TestTrain:
@@ -68,6 +75,7 @@ class TestTrain:
         optim = optax.adam(learning_rate=lr_schedule)
         surrogate = dnn.train(
             surrogate,
+            loss_fn,
             model.batch_generator(n_precompute),
             test_ds,
             optim,

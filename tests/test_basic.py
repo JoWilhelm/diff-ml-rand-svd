@@ -1,13 +1,7 @@
+import jax.numpy as jnp
+
 import diff_ml as dml
 
 
 def test_basic():
-    assert True
-
-
-def test_basic2():
-    assert dml.test()
-
-
-def test_basic3():
-    assert dml.mol() == 42
+    assert dml.mse(jnp.zeros((8,)), jnp.zeros((8,))) == 0.0

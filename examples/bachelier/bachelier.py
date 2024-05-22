@@ -6,10 +6,17 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import matplotlib.pyplot as plt
 import optax
+from jaxtyping import Array, Float
 
 import diff_ml as dml
 from diff_ml.model import Bachelier
 from diff_ml.nn.utils import init_model_weights
+
+
+def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
+    xs, ys = batch["spot"], batch["payoff"]
+    pred_ys = eqx.filter_vmap(model)(xs)
+    return dml.losses.mse(ys, pred_ys)
 
 
 def generator_from_samples(xs, n_samples: int, n_batch_size: int, *, key):
@@ -86,7 +93,7 @@ def main():
     )
 
     optim = optax.adam(learning_rate=1e-4)
-    surrogate = dml.train(surrogate, train_gen, test_ds, optim, n_epochs=n_epochs)
+    surrogate = dml.train(surrogate, loss_fn, train_gen, test_ds, optim, n_epochs=n_epochs)
 
 
 if __name__ == "__main__":

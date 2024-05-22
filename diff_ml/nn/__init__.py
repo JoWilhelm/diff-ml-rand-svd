@@ -1,4 +1,4 @@
-from diff_ml.nn.loss import (
+from diff_ml.nn.losses import (
     mse,
     rmse,
 )
