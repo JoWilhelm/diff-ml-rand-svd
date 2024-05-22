@@ -2,15 +2,6 @@ import equinox as eqx
 import jax
 
 
-def test():
-    """Just a simple test."""
-    return "dummy change to see that actions work with cache"
-
-
-def mol(i: int = 1) -> int:
-    return 42 * i
-
-
 def hvp(f, primals, tangents):
     return jax.jvp(lambda x: eqx.filter_grad(f)(x), primals, tangents)[1]
 
