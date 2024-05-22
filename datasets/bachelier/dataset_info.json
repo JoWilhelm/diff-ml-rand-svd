@@ -6,7 +6,11 @@
   "splits": [
     {
       "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
-      "name": "test"
+      "name": "train",
+      "numBytes": "117760",
+      "shardLengths": [
+        "1024"
+      ]
     }
   ],
   "supervisedKeys": {

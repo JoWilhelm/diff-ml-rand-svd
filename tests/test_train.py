@@ -15,32 +15,7 @@ import diff_ml.nn as dnn
 from datasets import Dataset, DatasetInfo, load_from_disk
 from diff_ml import Data, DataGenerator
 from diff_ml.model import Bachelier, generate_correlation_matrix
-
-
-def trunc_init(weight: Array, key: PRNGKeyArray) -> Array:
-    out, in_ = weight.shape
-    jnp.sqrt(1 / in_)
-    return jax.nn.initializers.glorot_normal()(key, (out, in_))
-
-
-def init_linear_weight(model, init_fn, key):
-    def is_linear(x):
-        return isinstance(x, eqx.nn.Linear)
-
-    def get_weights(m):
-        return [
-            x.weight
-            for x in jax.tree_util.tree_leaves(m, is_leaf=is_linear)
-            if is_linear(x)
-        ]
-
-    weights = get_weights(model)
-    new_weights = [
-        init_fn(weight, subkey)
-        for weight, subkey in zip(weights, jax.random.split(key, len(weights)))
-    ]
-    new_model = eqx.tree_at(get_weights, model, new_weights)
-    return new_model
+from diff_ml.nn import init_model_weights
 
 
 class TestTrain:
@@ -50,7 +25,7 @@ class TestTrain:
         n_precompute = 1024
         n_samples: int = 8 * 1024
         n_epochs: int = 3
-        n_batch_size: int = 512
+        n_batch_size: int = 256
 
         key, subkey = jrandom.split(key)
         weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
@@ -80,7 +55,7 @@ class TestTrain:
         y_denormalizer = dnn.Denormalization(mean=y_mean, std=y_std)
         surrogate = dnn.Normalized(x_normalizer, mlp, y_denormalizer)
         key, subkey = jrandom.split(key)
-        surrogate = init_linear_weight(surrogate, trunc_init, subkey)
+        surrogate = init_model_weights(surrogate, jax.nn.initializers.glorot_normal(), subkey)
 
         total_steps = n_epochs * (len(train_ds) // n_batch_size) + n_epochs
 
@@ -98,16 +73,6 @@ class TestTrain:
             optim,
             n_epochs=n_epochs,
         )
-
-        # jnp.asarray(train_ds["spot"])
-        # jnp.asarray(train_ds["payoff"])
-        # jnp.asarray(train_ds["differentials"])
-        #
-        # xs_test = jnp.asarray(test_ds["spot"])
-        # jnp.asarray(test_ds["payoff"])
-        # jnp.asarray(test_ds["differentials"])
-        #
-        # model.baskets(xs_test)
 
 
 if __name__ == "__main__":

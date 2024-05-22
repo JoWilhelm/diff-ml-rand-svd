@@ -11,16 +11,16 @@ from diff_ml import Data, DataGenerator
 from diff_ml.nn import loss
 
 
-Model: TypeAlias = Callable[[PyTree], PyTree]
+# Model: TypeAlias = Callable[[PyTree], PyTree]
 
 
-def loss_fn(model: Model, x: Float[Array, "batch ..."], y: Float[Array, " batch"]) -> Float:
+def loss_fn(model, x: Float[Array, "batch ..."], y: Float[Array, " batch"]) -> Float[Array, ""]:
     pred_y = eqx.filter_vmap(model)(x)
     result = loss.mse(y, pred_y)
     return result
 
 
-def evaluate(model: Model, testloader, loss_fn):
+def evaluate(model, testloader, loss_fn):
     """This function evaluates the model on the test dataset, computing the average loss."""
     avg_loss = 0
     for x, y, _ in testloader.values():
@@ -29,7 +29,7 @@ def evaluate(model: Model, testloader, loss_fn):
 
 
 def train(
-    model: Model,
+    model,
     train_data: DataGenerator,
     # test_data: Optional[DataGenerator],
     test_data: Optional[Data],

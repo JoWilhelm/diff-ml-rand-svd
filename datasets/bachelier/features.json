@@ -1,35 +1,39 @@
 {
-    "pythonClassName": "tensorflow_datasets.core.features.features_dict.FeaturesDict",
     "featuresDict": {
         "features": {
+            "differentials": {
+                "pythonClassName": "tensorflow_datasets.core.features.tensor_feature.Tensor",
+                "tensor": {
+                    "dtype": "float32",
+                    "encoding": "none",
+                    "shape": {
+                        "dimensions": [
+                            "7"
+                        ]
+                    }
+                }
+            },
             "payoff": {
                 "pythonClassName": "tensorflow_datasets.core.features.scalar.Scalar",
                 "tensor": {
-                    "shape": {},
                     "dtype": "float32",
-                    "encoding": "none"
-                }
-            },
-            "differentials": {
-                "pythonClassName": "tensorflow_datasets.core.features.scalar.Scalar",
-                "tensor": {
-                    "shape": {},
-                    "dtype": "float32",
-                    "encoding": "none"
+                    "encoding": "none",
+                    "shape": {}
                 }
             },
             "spot": {
                 "pythonClassName": "tensorflow_datasets.core.features.tensor_feature.Tensor",
                 "tensor": {
+                    "dtype": "float32",
+                    "encoding": "none",
                     "shape": {
                         "dimensions": [
                             "7"
                         ]
-                    },
-                    "dtype": "float32",
-                    "encoding": "none"
+                    }
                 }
             }
         }
-    }
+    },
+    "pythonClassName": "tensorflow_datasets.core.features.features_dict.FeaturesDict"
 }
