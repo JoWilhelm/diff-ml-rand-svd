@@ -55,7 +55,7 @@ class TestTrain:
         y_denormalizer = dnn.Denormalization(mean=y_mean, std=y_std)
         surrogate = dnn.Normalized(x_normalizer, mlp, y_denormalizer)
         key, subkey = jrandom.split(key)
-        surrogate = init_model_weights(surrogate, jax.nn.initializers.glorot_normal(), subkey)
+        surrogate = init_model_weights(surrogate, jax.nn.initializers.glorot_normal(), key=subkey)
 
         total_steps = n_epochs * (len(train_ds) // n_batch_size) + n_epochs
 

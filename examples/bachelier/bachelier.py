@@ -1,5 +1,4 @@
 import pathlib
-from typing import Callable, Literal, Union
 
 import equinox as eqx
 import jax
@@ -7,7 +6,6 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import matplotlib.pyplot as plt
 import optax
-from jaxtyping import Array
 
 import diff_ml as dml
 from diff_ml.model import Bachelier
@@ -41,10 +39,11 @@ def main():
 
     n_epochs = 100
     n_batch_size = 256
-    # train_gen = model.batch_generator(n_batch_size)
-    # print(next(train_gen))
+
     key, subkey = jrandom.split(key)
     train_gen = generator_from_samples(train_ds, n_samples, n_batch_size, key=subkey)
+    # Alternatively use the batch generator
+    # train_gen = model.batch_generator(n_batch_size)
 
     x_train = jnp.asarray(train_ds["spot"])
     y_train = jnp.asarray(train_ds["payoff"])
@@ -80,7 +79,7 @@ def main():
     mlp = eqx.nn.MLP(key=subkey, in_size=n_dims, out_size="scalar", width_size=20, depth=3, activation=jax.nn.silu)
 
     key, subkey = jrandom.split(key)
-    mlp = init_model_weights(mlp, jax.nn.initializers.glorot_normal(), subkey)
+    mlp = init_model_weights(mlp, jax.nn.initializers.glorot_normal(), key=subkey)
 
     surrogate = dml.Normalized(
         dml.Normalization(x_train_mean, x_train_std), mlp, dml.Denormalization(y_train_mean, y_train_std)
