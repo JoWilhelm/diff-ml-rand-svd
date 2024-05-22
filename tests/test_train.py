@@ -21,7 +21,7 @@ from diff_ml.nn import init_model_weights
 def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
     xs, ys = batch["spot"], batch["payoff"]
     pred_ys = eqx.filter_vmap(model)(xs)
-    result = dml.mse(ys, pred_ys)
+    result = dml.losses.mse(ys, pred_ys)
     return result
 
 
