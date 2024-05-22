@@ -1,20 +1,16 @@
-import typing
 from functools import partial
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
-import numpy as np
 import optax
-import tensorflow_datasets as tfds
-from jaxtyping import Array, Float, PRNGKeyArray
+from jaxtyping import Array, Float
 
 import diff_ml as dml
 import diff_ml.nn as dnn
-from datasets import Dataset, DatasetInfo, load_from_disk
-from diff_ml import Data, DataGenerator
-from diff_ml.model import Bachelier, generate_correlation_matrix
+from diff_ml import Data
+from diff_ml.model import Bachelier
 from diff_ml.nn import init_model_weights
 
 

@@ -1,11 +1,7 @@
-from dataclasses import dataclass
-from typing import Callable, Literal, Optional, Protocol, Union
+from collections.abc import Callable
+from typing import Optional
 
 import equinox as eqx
-import jax
-import jax.numpy as jnp
-import jax.random as jrandom
-from jax import jit
 from jaxtyping import Array, Float, PRNGKeyArray
 
 
@@ -22,6 +18,7 @@ class Normalization(eqx.Module):
     std: Float[Array, ""]
 
     def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
+        del key
         return (x - self.mean) / self.std
 
 
@@ -32,6 +29,7 @@ class Denormalization(eqx.Module):
     std: Float[Array, ""]
 
     def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
+        del key
         return x * self.std + self.mean
 
 

@@ -4,7 +4,7 @@ from typing import Optional
 import equinox as eqx
 import jax.numpy as jnp
 import optax
-from jaxtyping import Array, Float, Int, PyTree
+from jaxtyping import PyTree
 
 from diff_ml import Data, DataGenerator
 
