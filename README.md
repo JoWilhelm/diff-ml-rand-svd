@@ -14,7 +14,7 @@ Clone the repo and execute the following inside the root folder.
 python -m pip install -e .
 ```
 
-> Requires Python 3.9+, [JAX](https://github.com/google/jax) 0.4.13+ and [Equinox](https://github.com/patrick-kidger/equinox) 0.10.5+.
+> Requires Python 3.9+, [JAX](https://github.com/google/jax) 0.4.16+ and [Equinox](https://github.com/patrick-kidger/equinox) 0.10.5+.
 
 ## Development
 We use [Hatch](https://hatch.pypa.io/) as the project manager. The usual commands apply.
