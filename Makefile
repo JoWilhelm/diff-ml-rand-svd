@@ -2,7 +2,7 @@
 # Instead we use Hatch for managing the project.
 # These commands are just convenient shortcuts.
 
-.PHONY: build clean test
+.PHONY: build clean test install bachelier data fmt
 
 build:
 	hatch build
@@ -23,7 +23,7 @@ data:
 	hatch -e test run python tests/test_bachelier.py
 
 fmt:
-	hatch -e lint run all
+	hatch -e lint fmt
 
 edit:
 	hatch -e example run nvim
