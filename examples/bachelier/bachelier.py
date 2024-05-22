@@ -1,5 +1,5 @@
 import pathlib
-from typing import Literal, Union
+from typing import Callable, Literal, Union
 
 import equinox as eqx
 import jax
@@ -7,29 +7,11 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import matplotlib.pyplot as plt
 import optax
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array
 
 import diff_ml as dml
 from diff_ml.model import Bachelier
-
-
-def normalize(data: Array):
-    mean = jnp.mean(data)
-    std = jnp.std(data)
-    return (data - mean) / std, mean, std
-
-
-# def init_layer_weights(weight: Array, key: PRNGKeyArray) -> Array:
-#     return jax.nn.initializers.glorot_normal()(key, weight.shape)
-
-
-def init_model_weights(model, init_fn, key):
-    is_linear = lambda x: isinstance(x, eqx.nn.Linear)
-    get_weights = lambda m: [x.weight for x in jax.tree_util.tree_leaves(m, is_leaf=is_linear) if is_linear(x)]
-    weights = get_weights(model)
-    new_weights = [init_fn(subkey, weight.shape) for weight, subkey in zip(weights, jax.random.split(key, len(weights)))]
-    new_model = eqx.tree_at(get_weights, model, new_weights)
-    return new_model
+from diff_ml.nn.utils import init_model_weights
 
 
 def generator_from_samples(xs, n_samples: int, n_batch_size: int, *, key):
@@ -45,7 +27,7 @@ def main():
     prefix_path = f"{path}/{output_folder_name}"
     pathlib.Path(prefix_path).mkdir(parents=True, exist_ok=True)
 
-    key = jrandom.PRNGKey(0)
+    key = jrandom.key(0)
     n_dims: int = 7
     n_samples: int = 8 * 1024
 
@@ -99,7 +81,6 @@ def main():
 
     key, subkey = jrandom.split(key)
     mlp = init_model_weights(mlp, jax.nn.initializers.glorot_normal(), subkey)
-#     return jax.nn.initializers.glorot_normal()(key, weight.shape)
 
     surrogate = dml.Normalized(
         dml.Normalization(x_train_mean, x_train_std), mlp, dml.Denormalization(y_train_mean, y_train_std)
