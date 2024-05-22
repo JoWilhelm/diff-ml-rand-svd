@@ -29,7 +29,7 @@ hatch -e example run python examples/bachelier/bachelier.py
 ```
 #### Run Tests
 ```bash
-hatch run test
+hatch run test:test
 ```
 #### Build project wheel
 ```bash
