@@ -52,8 +52,6 @@ def main():
     # Alternatively use the batch generator
     # train_gen = model.batch_generator(n_batch_size)
 
-    x_train = jnp.asarray(train_ds["spot"])
-    y_train = jnp.asarray(train_ds["payoff"])
     x_train_mean = jnp.mean(train_ds["spot"])
     x_train_std = jnp.std(train_ds["spot"])
     y_train_mean = jnp.mean(train_ds["payoff"])
