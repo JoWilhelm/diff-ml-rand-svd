@@ -8,6 +8,7 @@ license = {text = "MIT License"}
 keywords = [
     "jax",
     "differential-machine-learning",
+    "sobolev-training",
     "neural-networks",
 ]
 authors = [
