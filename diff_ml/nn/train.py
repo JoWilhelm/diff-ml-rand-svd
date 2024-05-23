@@ -5,6 +5,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import optax
 from jaxtyping import PyTree
+from tqdm import tqdm
 
 from diff_ml import Data, DataGenerator
 
@@ -36,16 +37,18 @@ def train(
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
     train_loss = jnp.zeros(1)
 
-    for epoch in range(n_epochs):
+    pbar = tqdm(range(n_epochs))
+    for epoch in pbar:
         for batch in islice(train_data, 64):  # number of batches per epoch
             model, opt_state, train_loss = train_step(model, loss_fn, optim, opt_state, batch)
 
-        epoch_stats = f"Finished epoch {epoch:3d} | Train Loss: {train_loss:.5f}"
+        epoch_stats = f"Epoch {epoch:3d} | Train Loss: {train_loss:.5f}"
 
         if test_data:
             test_loss = jnp.sqrt(loss_fn(model, test_data))
-            print(f"{epoch_stats} | Test Loss: {test_loss:.5f}")
-        else:
-            print(epoch_stats)
+            epoch_stats += f" | Test Loss: {test_loss:.5f}"
+
+        pbar.set_description(epoch_stats)
+
 
     return model
