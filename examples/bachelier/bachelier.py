@@ -80,6 +80,7 @@ def main():
     plt.legend()
     plt.savefig(f"{prefix_path}/delta.pdf")
 
+    # Specify the surrogate model architecture
     key, subkey = jrandom.split(key)
     mlp = eqx.nn.MLP(key=subkey, in_size=n_dims, out_size="scalar", width_size=20, depth=3, activation=jax.nn.silu)
 
@@ -90,6 +91,7 @@ def main():
         dml.Normalization(x_train_mean, x_train_std), mlp, dml.Denormalization(y_train_mean, y_train_std)
     )
 
+    # Train the surrogate
     optim = optax.adam(learning_rate=1e-4)
     surrogate = dml.train(surrogate, loss_fn, train_gen, test_ds, optim, n_epochs=n_epochs)
 

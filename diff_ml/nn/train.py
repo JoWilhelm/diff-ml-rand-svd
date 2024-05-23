@@ -7,7 +7,7 @@ import optax
 from jaxtyping import PyTree
 from tqdm import tqdm
 
-from diff_ml import Data, DataGenerator
+from diff_ml.data import Data, DataGenerator
 
 
 def evaluate(model, testloader, loss_fn):

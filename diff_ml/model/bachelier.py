@@ -378,7 +378,6 @@ class Bachelier:
 
 def main():
     dml.print_df()
-    return dml.mol()
 
 
 if __name__ == "__main__":
