@@ -7,6 +7,9 @@ from jax import vmap
 from jaxtyping import Array, Float
 
 
+RegressionLossFn = Callable[..., Float[Array, ""]]
+
+
 def mse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
     """Mean squared error loss."""
     return jnp.mean((y - pred_y) ** 2)
@@ -17,19 +20,24 @@ def rmse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
     return jnp.sqrt(mse(y, pred_y))
 
 
-RegressionLossFn = Callable[..., Float[Array, ""]]
-
-
 class SobolevLossType(Enum):
-    FIRST_ORDER = 1
-    SECOND_ORDER_HUTCHINSON = 2
-    SECOND_ORDER_PCA = 3
+    ZEROTH_ORDER = 0  # regular loss function
+    FIRST_ORDER = 1  # use derivative information
+    SECOND_ORDER_HUTCHINSON = 2  # use second-order hessian-vector products sampled in random directions
+    SECOND_ORDER_PCA = 3  # use second-order hessian-vector products sampled in PCA directions
 
 
-# NOTE: This currently assumes that we have a regression problem
 def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossType.FIRST_ORDER) -> RegressionLossFn:
     sobolev_loss_fn = loss_fn
+
     if method == SobolevLossType.FIRST_ORDER:
+
+        def loss_balance(n_dims: int, weighting: float = 1.0) -> tuple[float, float]:
+            lambda_scale = weighting * n_dims
+            n_elements = 1.0 + lambda_scale
+            alpha = 1.0 / n_elements
+            beta = lambda_scale / n_elements
+            return alpha, beta
 
         def sobolev_first_order_loss(model, batch) -> Float[Array, ""]:
             x, y, dydx = batch["x"], batch["y"], batch["dydx"]
@@ -41,8 +49,8 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             value_loss = loss_fn(y, y_pred)
             grad_loss = loss_fn(dydx, dydx_pred)
 
-            alpha = 0.5
-            beta = 0.5
+            n_dims = x.shape[-1]
+            alpha, beta = loss_balance(n_dims)
 
             return alpha * value_loss + beta * grad_loss
 
