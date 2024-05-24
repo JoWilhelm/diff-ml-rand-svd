@@ -8,8 +8,8 @@ import jax.random as jrandom
 import jax.scipy.stats as jstats
 from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
-from diff_ml import Data, DataGenerator
 from diff_ml.model.payoff import EuropeanPayoff
+from diff_ml.typing import Data, DataGenerator
 
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:

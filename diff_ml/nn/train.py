@@ -10,7 +10,7 @@ from jax import vmap
 from jaxtyping import PyTree
 from tqdm import tqdm
 
-from diff_ml.data import Data, DataGenerator
+from diff_ml.typing import Data, DataGenerator
 
 
 @eqx.filter_jit

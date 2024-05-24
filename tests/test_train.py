@@ -9,19 +9,19 @@ from jaxtyping import Array, Float
 
 import diff_ml as dml
 import diff_ml.nn as dnn
-from diff_ml import Data
 from diff_ml.model import Bachelier
 from diff_ml.nn import init_model_weights
+from diff_ml.typing import Data
 
 
-def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
+def loss_fn(model, batch: Data) -> Float[Array, ""]:
     xs, ys = batch["x"], batch["y"]
     pred_ys = eqx.filter_vmap(model)(xs)
     result = dml.losses.mse(ys, pred_ys)
     return result
 
 
-def eval_fn(model, batch: dml.Data) -> Float[Array, ""]:
+def eval_fn(model, batch: Data) -> Float[Array, ""]:
     return jnp.sqrt(loss_fn(model, batch))
 
 

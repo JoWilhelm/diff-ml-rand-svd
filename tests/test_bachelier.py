@@ -8,8 +8,8 @@ import numpy as np
 import tensorflow_datasets as tfds
 
 from datasets import Dataset, DatasetInfo, load_from_disk
-from diff_ml import DataGenerator
 from diff_ml.model import Bachelier, generate_correlation_matrix
+from diff_ml.typing import DataGenerator
 
 
 def bachelier_ds_info() -> DatasetInfo:

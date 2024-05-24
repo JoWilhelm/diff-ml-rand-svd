@@ -10,17 +10,19 @@ import optax
 from jaxtyping import Array, Float
 
 import diff_ml as dml
+import diff_ml.nn as dnn
 from diff_ml.model import Bachelier
 from diff_ml.nn.utils import init_model_weights
+from diff_ml.typing import Data
 
 
-def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
+def loss_fn(model, batch: Data) -> Float[Array, ""]:
     xs, ys = batch["x"], batch["y"]
     pred_ys = eqx.filter_vmap(model)(xs)
     return dml.losses.mse(ys, pred_ys)
 
 
-def eval_fn(model, batch: dml.Data) -> Float[Array, ""]:
+def eval_fn(model, batch: Data) -> Float[Array, ""]:
     return jnp.sqrt(loss_fn(model, batch))
 
 
@@ -101,8 +103,8 @@ def main():
     key, subkey = jrandom.split(key)
     mlp = init_model_weights(mlp, jax.nn.initializers.glorot_normal(), key=subkey)
 
-    surrogate = dml.Normalized(
-        dml.Normalization(x_train_mean, x_train_std), mlp, dml.Denormalization(y_train_mean, y_train_std)
+    surrogate = dnn.Normalized(
+        dnn.Normalization(x_train_mean, x_train_std), mlp, dnn.Denormalization(y_train_mean, y_train_std)
     )
 
     # Train the surrogate

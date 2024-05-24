@@ -1,11 +1,9 @@
-from collections.abc import Callable
 from typing import Optional
 
 import equinox as eqx
 from jaxtyping import Array, Float, PRNGKeyArray
 
-
-Model = Callable[[Array, Optional[PRNGKeyArray]], Array]
+from diff_ml.typing import Model
 
 
 class Normalization(eqx.Module):
@@ -39,7 +37,7 @@ class Normalized(eqx.Module):
     def __init__(
         self,
         x_normalizer: Normalization,
-        model: eqx.Module,
+        model: Model,
         y_denormalizer: Denormalization,
     ):
         self.seq = eqx.nn.Sequential(layers=(x_normalizer, model, y_denormalizer))
