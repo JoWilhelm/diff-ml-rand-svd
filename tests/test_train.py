@@ -73,6 +73,7 @@ class TestTrain:
             surrogate,
             loss_fn,
             model.batch_generator(n_precompute),
+            loss_fn,
             test_ds,
             optim,
             n_epochs=n_epochs,

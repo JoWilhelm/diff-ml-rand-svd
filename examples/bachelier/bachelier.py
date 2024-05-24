@@ -4,6 +4,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
+import jax.tree_util as jtu
 import matplotlib.pyplot as plt
 import optax
 from jaxtyping import Array, Float
@@ -14,16 +15,24 @@ from diff_ml.nn.utils import init_model_weights
 
 
 def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
-    xs, ys = batch["spot"], batch["payoff"]
+    xs, ys = batch["x"], batch["y"]
     pred_ys = eqx.filter_vmap(model)(xs)
     return dml.losses.mse(ys, pred_ys)
 
 
-def generator_from_samples(xs, n_samples: int, n_batch_size: int, *, key):
+def train_generator(xs, n_samples: int, n_batch_size: int, *, key):
     while True:
         key, subkey = jrandom.split(key)
-        choice = jrandom.choice(key=subkey, a=n_samples, shape=(n_batch_size,))
-        yield jax.tree_util.tree_map(lambda x: x[choice], xs)
+
+        def subset_fn(key):
+            choice = jrandom.choice(key=key, a=n_samples, shape=(n_batch_size,))
+
+            def subset(x):
+                return x[choice]
+
+            return subset
+
+        yield jtu.tree_map(subset_fn(subkey), xs)
 
 
 def main():
@@ -49,18 +58,6 @@ def main():
 
     key, subkey = jrandom.split(key)
     train_gen = train_generator(train_ds, n_samples, n_batch_size, key=subkey)
-    # test_gen = test_generator(model.analytic, n_samples, n_batch_size, key=subkey)
-    # print("test dataset len: ", len(test_ds))
-    # test_gen = test_generator(test_ds, n_batch_size)
-    #
-    # for i, batch in enumerate(test_gen):
-    #     print(i)
-    #
-    #
-    # for i, batch in enumerate(test_gen):
-    #     print(i + 1)
-
-    # return
 
     # Alternatively use the batch generator
     # train_gen = model.batch_generator(n_batch_size)
@@ -106,7 +103,11 @@ def main():
 
     # Train the surrogate
     optim = optax.adam(learning_rate=1e-4)
-    surrogate = dml.train(surrogate, loss_fn, train_gen, test_ds, optim, n_epochs=n_epochs)
+    # eval_fn = # test_loss = jnp.sqrt(loss_fn(model, test_data))
+    surrogate = dml.train(surrogate, loss_fn, train_gen, loss_fn, test_ds, optim, n_epochs=n_epochs)
+
+    # sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse)
+    # surrogate = dml.train(surrogate, sobolev_loss_fn, train_gen, test_ds, optim, n_epochs=n_epochs)
 
 
 if __name__ == "__main__":
