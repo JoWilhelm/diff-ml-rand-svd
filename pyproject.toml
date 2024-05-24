@@ -130,15 +130,12 @@ select = [
   "YTT",
 ]
 ignore = [
+  # Ignore missing docstring in public module for now
   "D100",
   # Ignore missing docstring warning for now
   "D103",
   # Ignore spurious errors in type annotations using strings
   "F722",
-  # Allow non-abstract empty methods in abstract base classes
-  "B027",
-  # Allow boolean positional values in function calls, like `dict.get(... True)`
-  "FBT003",
   # Ignore checks for possible passwords
   "S105", "S106", "S107",
   # Ignore complexity
@@ -154,7 +151,6 @@ unfixable = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["diff-ml"]
-# combine-as-imports = true
 lines-after-imports = 2
 extra-standard-library = ["typing_extensions"]
 order-by-type = true
