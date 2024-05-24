@@ -32,13 +32,13 @@ def bachelier_ds_info() -> DatasetInfo:
 
 class TestGenerateCorrelatedSamples:
     def test_generate_correlated_samples(self):
-        key = jrandom.PRNGKey(0)
+        key = jrandom.key(0)
         n_samples = 1024
         samples = generate_correlation_matrix(key, n_samples)
         assert samples.shape == (n_samples, n_samples)
 
     def test_generator_to_ds_iter(self):
-        key = jrandom.PRNGKey(0)
+        key = jrandom.key(0)
         n_samples = 1024
         n_dims = 7
         n_batch = 8
@@ -63,7 +63,7 @@ class TestGenerateCorrelatedSamples:
                 assert xs_train.shape == (n_batch, n_dims)
 
     # def test_generator_to_ds(self):
-    #     key = jrandom.PRNGKey(0)
+    #     key = jrandom.key(0)
     #     n_samples = 1024
     #     n_dims = 7
     #     n_batch = 128
@@ -107,7 +107,7 @@ class TestGenerateCorrelatedSamples:
         return ds_identity
 
     def test_generator(self):
-        key = jrandom.PRNGKey(0)
+        key = jrandom.key(0)
         n_samples = 1024
         n_dims = 7
         n_batch = 128
@@ -174,7 +174,7 @@ class TestGenerateCorrelatedSamples:
             assert np.allclose(zs, differentials[i])
 
     # def test_generator_testdata(self):
-    #     key = jrandom.PRNGKey(0)
+    #     key = jrandom.key(0)
     #     n_samples = 1024
     #     n_dims = 7
     #

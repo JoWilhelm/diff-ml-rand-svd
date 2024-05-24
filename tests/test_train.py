@@ -27,7 +27,7 @@ def eval_fn(model, batch: Data) -> Float[Array, ""]:
 
 class TestTrain:
     def test_train(self):
-        key = jrandom.PRNGKey(0)
+        key = jrandom.key(0)
         n_dims: int = 1
         n_precompute = 1024
         n_samples: int = 8 * 1024
