@@ -48,22 +48,35 @@ def main():
     n_batch_size = 256
 
     key, subkey = jrandom.split(key)
-    train_gen = generator_from_samples(train_ds, n_samples, n_batch_size, key=subkey)
+    train_gen = train_generator(train_ds, n_samples, n_batch_size, key=subkey)
+    # test_gen = test_generator(model.analytic, n_samples, n_batch_size, key=subkey)
+    # print("test dataset len: ", len(test_ds))
+    # test_gen = test_generator(test_ds, n_batch_size)
+    #
+    # for i, batch in enumerate(test_gen):
+    #     print(i)
+    #
+    #
+    # for i, batch in enumerate(test_gen):
+    #     print(i + 1)
+
+    # return
+
     # Alternatively use the batch generator
     # train_gen = model.batch_generator(n_batch_size)
 
-    x_train_mean = jnp.mean(train_ds["spot"])
-    x_train_std = jnp.std(train_ds["spot"])
-    y_train_mean = jnp.mean(train_ds["payoff"])
-    y_train_std = jnp.std(train_ds["payoff"])
+    x_train_mean = jnp.mean(train_ds["x"])
+    x_train_std = jnp.std(train_ds["x"])
+    y_train_mean = jnp.mean(train_ds["y"])
+    y_train_std = jnp.std(train_ds["y"])
 
-    xs_train = jnp.asarray(train_ds["spot"])
-    ys_train = jnp.asarray(train_ds["payoff"])
-    zs_train = jnp.asarray(train_ds["differentials"])
+    xs_train = jnp.asarray(train_ds["x"])
+    ys_train = jnp.asarray(train_ds["y"])
+    zs_train = jnp.asarray(train_ds["dydx"])
 
-    xs_test = jnp.asarray(test_ds["spot"])
-    ys_test = jnp.asarray(test_ds["payoff"])
-    zs_test = jnp.asarray(test_ds["differentials"])
+    xs_test = jnp.asarray(test_ds["x"])
+    ys_test = jnp.asarray(test_ds["y"])
+    zs_test = jnp.asarray(test_ds["dydx"])
 
     baskets = model.baskets(xs_test)
 

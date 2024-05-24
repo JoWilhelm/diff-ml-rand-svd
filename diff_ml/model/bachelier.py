@@ -196,9 +196,9 @@ class Bachelier:
         assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
 
         return {
-            "spot": spots_1,
-            "payoff": payoffs_vjp,
-            "differentials": differentials_vjp,
+            "x": spots_1,
+            "y": payoffs_vjp,
+            "dydx": differentials_vjp,
         }
 
     def dataloader(self):
@@ -257,9 +257,9 @@ class Bachelier:
         deltas = greeks[0] @ self.weights.reshape((1, -1))
 
         return {
-            "spot": spots,
-            "payoff": prices,
-            "differentials": deltas,
+            "x": spots,
+            "y": prices,
+            "dydx": deltas,
         }
 
     class Call:

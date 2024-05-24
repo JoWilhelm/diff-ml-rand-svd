@@ -7,7 +7,7 @@
     {
       "filepathTemplate": "{DATASET}-{SPLIT}.{FILEFORMAT}-{SHARD_INDEX}",
       "name": "train",
-      "numBytes": "117760",
+      "numBytes": "100352",
       "shardLengths": [
         "1024"
       ]
@@ -17,16 +17,16 @@
     "tuple": {
       "items": [
         {
-          "featureKey": "spot"
+          "featureKey": "x"
         },
         {
           "tuple": {
             "items": [
               {
-                "featureKey": "payoff"
+                "featureKey": "y"
               },
               {
-                "featureKey": "differentials"
+                "featureKey": "dydx"
               }
             ]
           }

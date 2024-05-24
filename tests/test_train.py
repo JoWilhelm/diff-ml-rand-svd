@@ -15,7 +15,7 @@ from diff_ml.nn import init_model_weights
 
 
 def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
-    xs, ys = batch["spot"], batch["payoff"]
+    xs, ys = batch["x"], batch["y"]
     pred_ys = eqx.filter_vmap(model)(xs)
     result = dml.losses.mse(ys, pred_ys)
     return result
@@ -38,11 +38,11 @@ class TestTrain:
         train_ds: Data = model.sample(n_samples)
         test_ds: Data = model.analytic(n_samples)
 
-        x_mean = jnp.mean(train_ds["spot"])
-        x_std = jnp.std(train_ds["spot"])
+        x_mean = jnp.mean(train_ds["x"])
+        x_std = jnp.std(train_ds["x"])
 
-        y_mean = jnp.mean(train_ds["payoff"])
-        y_std = jnp.std(train_ds["payoff"])
+        y_mean = jnp.mean(train_ds["y"])
+        y_std = jnp.std(train_ds["y"])
 
         key, subkey = jrandom.split(key)
         mlp = eqx.nn.MLP(

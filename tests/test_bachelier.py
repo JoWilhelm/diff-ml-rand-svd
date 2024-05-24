@@ -59,7 +59,7 @@ class TestGenerateCorrelatedSamples:
             ds_gen_iter = typing.cast(DataGenerator, ds_gen_jax.iter(batch_size=n_batch))
             for _ in range(2):
                 d = next(ds_gen_iter)
-                xs_train = d["spot"]
+                xs_train = d["x"]
                 assert xs_train.shape == (n_batch, n_dims)
 
     # def test_generator_to_ds(self):
@@ -119,17 +119,19 @@ class TestGenerateCorrelatedSamples:
             description="Bachelier Dataset with Differential Data.",
             features=tfds.features.FeaturesDict(
                 {
-                    "spot": tfds.features.Tensor(
+                    "x": tfds.features.Tensor(
                         shape=(n_dims,),
                         dtype=np.float32,
+                        doc="spot price"
                     ),
-                    "payoff": tfds.features.Scalar(
+                    "y": tfds.features.Scalar(
                         dtype=np.float32,
+                        doc="payoff"
                     ),
-                    "differentials": tfds.features.Tensor(shape=(n_dims,), dtype=np.float32),
+                    "dydx": tfds.features.Tensor(shape=(n_dims,), dtype=np.float32, doc="differential data"),
                 }
             ),
-            supervised_keys=("spot", ("payoff", "differentials")),
+            supervised_keys=("x", ("y", "dydx")),
         )
 
         writer = tfds.core.SequentialWriter(  # pyright: ignore
@@ -146,7 +148,7 @@ class TestGenerateCorrelatedSamples:
 
         writer.add_examples({"train": examples})
         writer.close_all()
-        assert jnp.asarray(data["spot"]).shape == (n_samples, n_dims)
+        assert jnp.asarray(data["x"]).shape == (n_samples, n_dims)
 
         ds_builder = tfds.builder_from_directory("datasets/bachelier")
         ds = ds_builder.as_dataset(split="train", batch_size=n_batch, as_supervised=True)
@@ -163,9 +165,9 @@ class TestGenerateCorrelatedSamples:
         np_all = tfds.as_numpy(ds_all)
         np_all = typing.cast(typing.Iterable, np_all)
 
-        spots = np.asarray(data["spot"])
-        payoffs = np.asarray(data["payoff"])
-        differentials = np.asarray(data["differentials"])
+        spots = np.asarray(data["x"])
+        payoffs = np.asarray(data["y"])
+        differentials = np.asarray(data["dydx"])
         for i, (xs, (ys, zs)) in enumerate(np_all):
             assert np.allclose(xs, spots[i])
             assert np.allclose(ys, payoffs[i])
