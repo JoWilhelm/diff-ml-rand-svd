@@ -2,10 +2,12 @@ import equinox as eqx
 import jax
 
 
+@jax.named_scope("dml.ad.hvp")
 def hvp(f, primals, tangents):
     return jax.jvp(lambda x: eqx.filter_grad(f)(x), primals, tangents)[1]
 
 
+@jax.named_scope("dml.ad.hmp")
 def hmp(f, primals):
     def hvp_(tangents):
         return hvp(f, (primals,), (tangents,))

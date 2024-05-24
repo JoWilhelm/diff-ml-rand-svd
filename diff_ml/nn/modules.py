@@ -1,6 +1,7 @@
 from typing import Optional
 
 import equinox as eqx
+import jax
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from diff_ml.typing import Model
@@ -15,6 +16,7 @@ class Normalization(eqx.Module):
     mean: Float[Array, ""]
     std: Float[Array, ""]
 
+    @jax.named_scope("dml.nn.Normalization")
     def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
         """Normalizes (input) data.
 
@@ -35,6 +37,7 @@ class Denormalization(eqx.Module):
     mean: Float[Array, ""]
     std: Float[Array, ""]
 
+    @jax.named_scope("dml.nn.Denormalization")
     def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
         """Denormalizes (output) data.
 
@@ -69,6 +72,7 @@ class Normalized(eqx.Module):
         """
         self.seq = eqx.nn.Sequential(layers=(x_normalizer, model, y_denormalizer))
 
+    @jax.named_scope("dml.nn.Normalized")
     def __call__(self, x: Array, *, key: Optional[PRNGKeyArray] = None) -> Array:
         """Forward pass."""
         return self.seq(x, key=key)

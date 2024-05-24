@@ -2,6 +2,7 @@ from collections.abc import Callable
 from enum import Enum
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from jax import vmap
 from jaxtyping import Array, Float
@@ -10,11 +11,13 @@ from jaxtyping import Array, Float
 RegressionLossFn = Callable[..., Float[Array, ""]]
 
 
+@jax.named_scope("dml.losses.mse")
 def mse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
     """Mean squared error loss."""
     return jnp.mean((y - pred_y) ** 2)
 
 
+@jax.named_scope("dml.losses.rmse")
 def rmse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
     """Root mean squared error loss."""
     return jnp.sqrt(mse(y, pred_y))
@@ -37,6 +40,7 @@ class SobolevLossType(Enum):
     SECOND_ORDER_PCA = 3
 
 
+@jax.named_scope("dml.losses.sobolev")
 def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossType.FIRST_ORDER) -> RegressionLossFn:
     sobolev_loss_fn = loss_fn
 
