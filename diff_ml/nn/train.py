@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 from jax import vmap
-from jaxtyping import PyTree
+from jaxtyping import ArrayLike, PyTree
 from tqdm import tqdm
 
 from diff_ml.typing import Data, DataGenerator
@@ -40,6 +40,10 @@ def train_step(model, loss_fn, optim: optax.GradientTransformation, opt_state: P
     return model, opt_state, loss_value
 
 
+def metrics_update_element(metrics: dict, key: str, epoch: int, loss: ArrayLike):
+    metrics[key] = metrics[key].at[epoch].set(loss)
+
+
 def train(
     model,
     loss_fn,
@@ -48,23 +52,27 @@ def train(
     test_data: Optional[Data],
     optim: optax.GradientTransformation,
     n_epochs: int,
+    n_batches_per_epoch: int = 64,
 ) -> PyTree:
     """Canonical training loop."""
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
     train_loss = jnp.zeros(1)
     batch_size = len(next(train_data)["x"])
+    metrics = {"train_loss": jnp.zeros(n_epochs), "test_loss": jnp.zeros(n_epochs)}
 
     pbar = tqdm(range(n_epochs))
     for epoch in pbar:
-        for batch in islice(train_data, 64):  # number of batches per epoch
+        for batch in islice(train_data, n_batches_per_epoch):
             model, opt_state, train_loss = train_step(model, loss_fn, optim, opt_state, batch)
 
+        metrics_update_element(metrics, "train_loss", epoch, train_loss)
         epoch_stats = f"Epoch: {epoch:3d} | Train: {train_loss:.5f}"
 
         if test_data:
             test_loss = evaluate(model, test_data, batch_size, eval_fn)
+            metrics_update_element(metrics, "test_loss", epoch, test_loss)
             epoch_stats += f" | Test: {test_loss:.5f}"
 
         pbar.set_description(epoch_stats)
 
-    return model
+    return model, metrics

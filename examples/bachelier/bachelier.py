@@ -42,20 +42,21 @@ def train_generator(xs, n_samples: int, n_batch_size: int, *, key):
 
 
 def main():
+    # Ensure result folder exists
     path = pathlib.Path(__file__).parent.absolute()
     output_folder_name = "result"
     prefix_path = f"{path}/{output_folder_name}"
     pathlib.Path(prefix_path).mkdir(parents=True, exist_ok=True)
 
+    # Specify model
     key = jrandom.key(0)
     n_dims: int = 7
     n_samples: int = 8 * 1024
-
     key, subkey = jrandom.split(key)
     weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
-
     model = Bachelier(key, n_dims, weights)
 
+    # Generate data
     train_ds = model.sample(n_samples)
     test_ds = model.analytic(n_samples)
 
@@ -65,9 +66,7 @@ def main():
     key, subkey = jrandom.split(key)
     train_gen = train_generator(train_ds, n_samples, n_batch_size, key=subkey)
 
-    # Alternatively use the batch generator
-    # train_gen = model.batch_generator(n_batch_size)
-
+    # Plot data
     x_train_mean = jnp.mean(train_ds["x"])
     x_train_std = jnp.std(train_ds["x"])
     y_train_mean = jnp.mean(train_ds["y"])
@@ -107,12 +106,27 @@ def main():
         dnn.Normalization(x_train_mean, x_train_std), mlp, dnn.Denormalization(y_train_mean, y_train_std)
     )
 
-    # Train the surrogate
+    # Train the surrogate in the usual manner
     optim = optax.adam(learning_rate=1e-4)
-    # surrogate = dml.train(surrogate, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
+    surrogate_std = surrogate
+    surrogate_std, metrics_std = dml.train(surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
+    # Train the surrogate using sobolev loss
+    optim = optax.adam(learning_rate=1e-4)
     sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse)
-    surrogate = dml.train(surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
+    surrogate, metrics = dml.train(surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
+
+    # Plot loss curve
+    plt.figure()
+    plt.plot(jnp.sqrt(metrics_std["train_loss"]), label="Vanilla Train Loss")
+    plt.plot(metrics_std["test_loss"], label="Vanilla Test Loss")
+    plt.plot(jnp.sqrt(metrics["train_loss"]), label="Sobolev Train Loss")
+    plt.plot(metrics["test_loss"], label="Sobolev Test Loss")
+    plt.title("Surrogates for Bachelier Basket Option")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss [RMSE]")
+    plt.legend()
+    plt.savefig(f"{prefix_path}/loss.pdf")
 
 
 if __name__ == "__main__":

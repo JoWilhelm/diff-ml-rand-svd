@@ -73,7 +73,7 @@ class TestTrain:
             decay_rate=0.9,
         )
         optim = optax.adam(learning_rate=lr_schedule)
-        surrogate = dnn.train(
+        surrogate, _ = dnn.train(
             surrogate,
             loss_fn,
             model.batch_generator(n_precompute),
