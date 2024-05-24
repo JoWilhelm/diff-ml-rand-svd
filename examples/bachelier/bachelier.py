@@ -109,10 +109,10 @@ def main():
 
     # Train the surrogate
     optim = optax.adam(learning_rate=1e-4)
-    surrogate = dml.train(surrogate, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
+    # surrogate = dml.train(surrogate, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
-    # sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse)
-    # surrogate = dml.train(surrogate, sobolev_loss_fn, train_gen, test_ds, optim, n_epochs=n_epochs)
+    sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse)
+    surrogate = dml.train(surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
 
 if __name__ == "__main__":
