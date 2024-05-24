@@ -8,7 +8,6 @@ import jax.random as jrandom
 import jax.scipy.stats as jstats
 from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
-import diff_ml as dml
 from diff_ml import Data, DataGenerator
 from diff_ml.model.payoff import EuropeanPayoff
 
@@ -374,11 +373,3 @@ class Bachelier:
             gammas = call.gamma(spot, strike, vol, t)
             vegas = call.vega(spot, strike, vol, t)
             return deltas, gammas, vegas
-
-
-def main():
-    dml.print_df()
-
-
-if __name__ == "__main__":
-    main()

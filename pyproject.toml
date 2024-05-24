@@ -32,7 +32,6 @@ dependencies = [
     "jaxlib>=0.4.16",
     "equinox>=0.10.5",
     "jaxtyping>=0.2.20",
-    "polars>=0.18.8",
     "optax>=0.1.7",
     "tqdm>=4.66.4",
 ]
