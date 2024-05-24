@@ -20,6 +20,10 @@ def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
     return dml.losses.mse(ys, pred_ys)
 
 
+def eval_fn(model, batch: dml.Data) -> Float[Array, ""]:
+    return jnp.sqrt(loss_fn(model, batch))
+
+
 def train_generator(xs, n_samples: int, n_batch_size: int, *, key):
     while True:
         key, subkey = jrandom.split(key)
@@ -103,8 +107,7 @@ def main():
 
     # Train the surrogate
     optim = optax.adam(learning_rate=1e-4)
-    # eval_fn = # test_loss = jnp.sqrt(loss_fn(model, test_data))
-    surrogate = dml.train(surrogate, loss_fn, train_gen, loss_fn, test_ds, optim, n_epochs=n_epochs)
+    surrogate = dml.train(surrogate, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
     # sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse)
     # surrogate = dml.train(surrogate, sobolev_loss_fn, train_gen, test_ds, optim, n_epochs=n_epochs)

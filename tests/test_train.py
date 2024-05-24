@@ -21,6 +21,10 @@ def loss_fn(model, batch: dml.Data) -> Float[Array, ""]:
     return result
 
 
+def eval_fn(model, batch: dml.Data) -> Float[Array, ""]:
+    return jnp.sqrt(loss_fn(model, batch))
+
+
 class TestTrain:
     def test_train(self):
         key = jrandom.PRNGKey(0)
@@ -73,7 +77,7 @@ class TestTrain:
             surrogate,
             loss_fn,
             model.batch_generator(n_precompute),
-            loss_fn,
+            eval_fn,
             test_ds,
             optim,
             n_epochs=n_epochs,
