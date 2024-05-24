@@ -49,6 +49,7 @@ def train(
     optim: optax.GradientTransformation,
     n_epochs: int,
 ) -> PyTree:
+    """Canonical training loop."""
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
     train_loss = jnp.zeros(1)
     batch_size = len(next(train_data)["x"])

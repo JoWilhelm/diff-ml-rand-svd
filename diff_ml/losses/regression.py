@@ -21,10 +21,20 @@ def rmse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
 
 
 class SobolevLossType(Enum):
-    ZEROTH_ORDER = 0  # regular loss function
-    FIRST_ORDER = 1  # use derivative information
-    SECOND_ORDER_HUTCHINSON = 2  # use second-order hessian-vector products sampled in random directions
-    SECOND_ORDER_PCA = 3  # use second-order hessian-vector products sampled in PCA directions
+    """Types of Sobolev loss to use.
+
+    Attributes:
+        ZEROTH_ORDER: Unmodified loss function.
+        FIRST_ORDER: Use first-order derivative information.
+        SECOND_ORDER_HUTCHINSON: Use second-order hessian-vector products sampled in random directions.
+        SECOND_ORDER_PCA: Use second-order hessian-vector products sampled in PCA directions.
+
+    """
+
+    ZEROTH_ORDER = 0
+    FIRST_ORDER = 1
+    SECOND_ORDER_HUTCHINSON = 2
+    SECOND_ORDER_PCA = 3
 
 
 def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossType.FIRST_ORDER) -> RegressionLossFn:
