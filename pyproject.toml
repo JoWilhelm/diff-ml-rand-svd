@@ -54,7 +54,6 @@ python = "3.9"
 
 [tool.hatch.envs.example]
 dependencies = [
-  "beartype",
   "matplotlib>=3.7.1",
 ]
 
