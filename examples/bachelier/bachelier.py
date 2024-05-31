@@ -109,7 +109,9 @@ def main():
     # Train the surrogate in the usual manner
     optim = optax.adam(learning_rate=1e-4)
     surrogate_std = surrogate
-    surrogate_std, metrics_std = dml.train(surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
+    surrogate_std, metrics_std = dml.train(
+        surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs
+    )
 
     # Train the surrogate using sobolev loss
     optim = optax.adam(learning_rate=1e-4)
@@ -117,6 +119,7 @@ def main():
     surrogate, metrics = dml.train(surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
     # Plot loss curve
+    # plt.rcParams.update({"text.usetex": True, "font.family": "serif", "font.serif": "EB Garamond", "font.size": 20})
     plt.figure()
     plt.plot(jnp.sqrt(metrics_std["train_loss"]), label="Vanilla Train Loss")
     plt.plot(metrics_std["test_loss"], label="Vanilla Test Loss")
@@ -126,7 +129,7 @@ def main():
     plt.xlabel("Epoch")
     plt.ylabel("Loss [RMSE]")
     plt.legend()
-    plt.savefig(f"{prefix_path}/loss.pdf")
+    plt.savefig(f"{prefix_path}/loss.pdf", bbox_inches="tight")
 
 
 if __name__ == "__main__":
