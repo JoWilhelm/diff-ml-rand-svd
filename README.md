@@ -5,7 +5,8 @@ For detailed background information, consider looking into:
 https://neilkichler.github.io/master-thesis/Thesis.pdf
 
 ## Notebooks
-The notebooks contain the majority of the code right now and accumulate the ideas that are needed for the proposed methods. 
+The notebooks contain the majority of the code right now and accumulate the ideas that are needed for the proposed methods. The package currently implements the core
+functions needed for Sobolev Training / Differential Machine Learning.
 
 ## Installation
 Clone the repo and execute the following inside the root folder.
