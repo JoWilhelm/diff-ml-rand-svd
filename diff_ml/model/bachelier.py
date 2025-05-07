@@ -138,6 +138,8 @@ class Bachelier:
 
         pay = 0.5 * (pay_a + pay_b)
         return pay
+    
+    
 
     def sample(self, n_samples: int) -> Data:
         """TODO: ."""
@@ -199,6 +201,10 @@ class Bachelier:
             "y": payoffs_vjp,
             "dydx": differentials_vjp,
         }
+    
+
+
+
 
     def dataloader(self):
         """Yields from already computed data."""
@@ -233,6 +239,9 @@ class Bachelier:
                 sample = dict(zip(keys, ith_sample))
                 yield sample
 
+
+
+
     def analytic(self, n_samples, minval=0.5, maxval=1.5) -> Data:
         """TODO: ."""
         # adjust lower and upper for dimension
@@ -260,6 +269,9 @@ class Bachelier:
             "y": prices,
             "dydx": deltas,
         }
+
+
+
 
     class Call:
         """Analytic solutions to price and greeks (delta, gamma, vega) of call option on Bachelier."""
