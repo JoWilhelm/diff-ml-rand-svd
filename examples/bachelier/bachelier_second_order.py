@@ -8,12 +8,15 @@ import jax.tree_util as jtu
 import matplotlib.pyplot as plt
 import optax
 from jaxtyping import Array, Float
+from jax import vmap
 
 import diff_ml as dml
 import diff_ml.nn as dnn
 from diff_ml.model import Bachelier
 from diff_ml.nn.utils import init_model_weights
 from diff_ml.typing import Data
+
+from diff_ml.plotting import plot_eval
 
 
 def loss_fn(model, batch: Data) -> Float[Array, ""]:
@@ -62,9 +65,6 @@ def main():
     train_ds = model.sample(n_samples)
     test_ds = model.analytic(n_samples)
 
-
-
-    # TODO generate second-order data
 
 
 
@@ -134,9 +134,10 @@ def main():
 
 
     # TODO integrate second order learning with HVP PCA
+    # TODO generate mising second-order training data in pca loss fn
 
-
-
+    
+    
 
     # Plot loss curve
     # plt.rcParams.update({"text.usetex": True, "font.family": "serif", "font.serif": "EB Garamond", "font.size": 20})
@@ -151,7 +152,33 @@ def main():
     plt.legend()
     plt.savefig(f"{prefix_path}/loss.pdf", bbox_inches="tight")
 
-    # TODO visualize second order predictions
+
+
+
+
+
+
+
+
+
+    # TODO put this somewhere where it makes more sense, separate file?
+
+    class MakeScalar(eqx.Module):
+        model: eqx.Module
+
+        def __call__(self, *args, **kwargs):
+            out = self.model(*args, **kwargs)
+            return jnp.reshape(out, ())
+    
+    def predict(model, xs):
+        pred_y, pred_dydx = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(xs)
+        pred_ddyddx = vmap(jax.hessian(MakeScalar(model)))(xs)
+
+        return pred_y, pred_dydx, pred_ddyddx
+
+    # visualize (second order) predictions
+    pred_y, pred_dydx, pred_ddyddx = predict(surrogate_std, test_ds["x"])
+    plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds)
 
 
 

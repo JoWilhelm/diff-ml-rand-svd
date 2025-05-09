@@ -143,6 +143,8 @@ class Bachelier:
 
     def sample(self, n_samples: int) -> Data:
         """TODO: ."""
+
+
         #  w.l.o.g., initialize spots, i.e. S_0, as all ones
         spots_0 = jnp.repeat(1.0, self.n_dims)
 
@@ -164,6 +166,7 @@ class Bachelier:
         v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
         vols = vols * self.vol_basket / v
 
+
         t_delta = self.t_maturity - self.t_exposure
 
         # Cholesky
@@ -177,9 +180,13 @@ class Bachelier:
         # simulations
         self.key, subkey = jrandom.split(self.key)
         normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
+        
         paths_0 = normal_samples[0] @ chol_0.T
         paths_1 = normal_samples[1] @ chol.T
         spots_1 = spots_0 + paths_0
+
+
+
 
         if self.use_antithetic:
             analytic_differentials_fn = Bachelier.payoff_antithetic_analytic_differentials
@@ -195,6 +202,7 @@ class Bachelier:
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
         assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
+
 
         return {
             "x": spots_1,
@@ -244,6 +252,7 @@ class Bachelier:
 
     def analytic(self, n_samples, minval=0.5, maxval=1.5) -> Data:
         """TODO: ."""
+
         # adjust lower and upper for dimension
         adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
         adj_lower = 1.0 - (1.0 - minval) * adj
@@ -252,8 +261,10 @@ class Bachelier:
         # draw random spots within range
         self.key, subkey = jrandom.split(self.key)
         spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
+        
         baskets = jnp.dot(spots, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
+        
         prices = Bachelier.Call.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
         prices = prices.reshape((-1,))
         # prices = prices.reshape((-1, 1))
@@ -263,11 +274,17 @@ class Bachelier:
 
         # TODO: generalize
         deltas = greeks[0] @ self.weights.reshape((1, -1))
+        gammas = greeks[1]
+        vegas = greeks[2]
 
         return {
             "x": spots,
             "y": prices,
             "dydx": deltas,
+            "ddyddx": gammas,
+            "dydvol": vegas,
+            "baskets": baskets
+
         }
 
 
