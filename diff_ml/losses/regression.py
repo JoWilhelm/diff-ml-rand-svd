@@ -102,15 +102,21 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             # unpack dictionary for readability
             x, y, dydx = batch["x"], batch["y"], batch["dydx"]
             
+
+
             # TODO alpha, beta, gamma = loss_balance()
             
+
+
             # get surrogate prediction, first-order derivative and hessian
             y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
             hessian = eqx.filter_vmap(jax.hessian(MakeScalar(model)))(x) # TODO move lower where needed?
             assert y.shape == y_pred.shape
             assert dydx.shape == dydx_pred.shape
-            
-            # TODO understand batch hmp? needed for what?
+
+
+
+
 
             # apply PCA to first-order gradients of predictions
             dydx_used = dydx_pred
@@ -126,14 +132,44 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             kappa = 0.95
             # singular values scaled to represent % of variance explained.
             S_var = S**2 / jnp.sum(S**2)
-            # find index k, s.t. the first k elements in S_var account for 95% of the variance
-            k_pc = jnp.argmax(jnp.cumsum(S_var) >= kappa) # returns first occurence of True
-            k_pc = jnp.maximum(k_pc, jnp.ones_like(k_pc))
+            compute_hvp_ = ~(jnp.cumsum(S_var) > kappa)
+            # if the first principal component is already accounting for 95% of the variance, compute_hvp will be just all False.
+            # Below we make use that at least the first principal component is always actively used.
+            compute_hvp = compute_hvp_.at[0].set(True)
+
+            ## find index k, s.t. the first k elements in S_var account for 95% of the variance
+            #k_pc_ = jnp.argmax(jnp.cumsum(S_var) >= kappa) # returns first occurence of True
+            #k_pc = jnp.maximum(k_pc_, jnp.ones_like(k_pc_))
+            #
+            ## get HVPs of surrogate in PCA directions
+            ## TODO: understnad why we use f=model/surrogate and not f=bachelier
+            #mtx = get_HVPs(f=MakeScalar(model), primals=x, directions=principal_components)
 
 
-            # get HVPs in PCA directions
-            # TODO: understnad why we use f=model/surrogate and not f=bachelier
-            mtx = get_HVPs(f=MakeScalar(model), primals=x, directions=principal_components)
+
+
+            # random vectors version
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

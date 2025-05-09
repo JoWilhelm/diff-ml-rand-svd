@@ -16,62 +16,58 @@ from functools import partial
 def hvp(f, primals, tangents):
     return jax.jvp(lambda x: eqx.filter_grad(f)(x), primals, tangents)[1]
 
-def hmp(f, primals):
-    
-    def hvp_(tangents):
-        return hvp(f, (primals,), (tangents, ))
+#def hmp(f, primals):
+#    
+#    def hvp_(tangents):
+#        return hvp(f, (primals,), (tangents, ))
+#
+#    return eqx.filter_vmap(hvp_)
+#
+#
+#def hvp_args(f, primals, tangents, *f_args):
+#    return jax.jvp(lambda x: eqx.filter_grad(f)(x, *f_args), primals, tangents)[1]
+#
+#def hmp_args(f, primals, *f_args):
+#    
+#    def hvp_(tangents):
+#        return hvp_args(f, (primals,), (tangents, ), *f_args)
+#
+#    return eqx.filter_vmap(hvp_)
+#
+#def batch_hmp_args(f, vmapped_args: Tuple = ()):
+#
+#    def hvp_(primals, tangents, *f_args):
+#        return hvp_args(f, (primals, ), (tangents, ), *f_args)
+#
+#    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None, *vmapped_args)), in_axes=(None, 1, *tuple([None for _ in range(len(vmapped_args))])))
+#
+## jax cannot deal with dynamic slices of arrays
+## therefore, we cannot simply slice the principal_components array while using batch_hmp
+#
+## this is a version where a 0 vector principal component will lead to a different path (namely returning 0) compared to computing a hvp.
+#def cond_fn_pca(tangents, *args):
+#    # xs, cum_sum = x
+#    # return cum_sum > 0.95
+#
+#    # jax.debug.print("tangents {tangents}", tangents=tangents)
+#
+#    return jnp.any(tangents[0] > 0.0)  # NOTE: we set the tangents to zero if we do not want to compute its derivative (because principle component is too small)
+#
+#def hvp_pca(f, primals, tangents):
+#    return jax.lax.cond(cond_fn_pca(tangents), lambda _: hvp(f, primals, tangents), lambda _: tangents[0], None)
+#
+#def batch_hmp_select(f):
+#
+#    def hvp_(primals, tangents):
+#        return hvp_pca(f, (primals,), (tangents,))
+#
+#    # x = jnp.zeros(shape=(1, 1))
+#    # jax.lax.while_loop(cond_fn_pca, fn, (x, 0.0)) # not reverse-mode differentiable!
+#    # jnp.piecewise(x, cond_fn_pca, fn, (x, 0.0)) # not reverse-mode differentiable!
+#
+#    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None)), in_axes=(None, 1))
+#
 
-    return eqx.filter_vmap(hvp_)
-
-def batch_hmp(f):
-
-    def hvp_(primals, tangents):
-        return hvp(f, (primals, ), (tangents, ))
-
-    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None)), in_axes=(None, 1))
-
-def hvp_args(f, primals, tangents, *f_args):
-    return jax.jvp(lambda x: eqx.filter_grad(f)(x, *f_args), primals, tangents)[1]
-
-def hmp_args(f, primals, *f_args):
-    
-    def hvp_(tangents):
-        return hvp_args(f, (primals,), (tangents, ), *f_args)
-
-    return eqx.filter_vmap(hvp_)
-
-def batch_hmp_args(f, vmapped_args: Tuple = ()):
-
-    def hvp_(primals, tangents, *f_args):
-        return hvp_args(f, (primals, ), (tangents, ), *f_args)
-
-    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None, *vmapped_args)), in_axes=(None, 1, *tuple([None for _ in range(len(vmapped_args))])))
-
-# jax cannot deal with dynamic slices of arrays
-# therefore, we cannot simply slice the principal_components array while using batch_hmp
-
-# this is a version where a 0 vector principal component will lead to a different path (namely returning 0) compared to computing a hvp.
-def cond_fn_pca(tangents, *args):
-    # xs, cum_sum = x
-    # return cum_sum > 0.95
-
-    # jax.debug.print("tangents {tangents}", tangents=tangents)
-
-    return jnp.any(tangents[0] > 0.0)  # NOTE: we set the tangents to zero if we do not want to compute its derivative (because principle component is too small)
-
-def hvp_pca(f, primals, tangents):
-    return jax.lax.cond(cond_fn_pca(tangents), lambda _: hvp(f, primals, tangents), lambda _: tangents[0], None)
-
-def batch_hmp_select(f):
-
-    def hvp_(primals, tangents):
-        return hvp_pca(f, (primals,), (tangents,))
-
-    # x = jnp.zeros(shape=(1, 1))
-    # jax.lax.while_loop(cond_fn_pca, fn, (x, 0.0)) # not reverse-mode differentiable!
-    # jnp.piecewise(x, cond_fn_pca, fn, (x, 0.0)) # not reverse-mode differentiable!
-
-    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None)), in_axes=(None, 1))
 
 # this is a version where we explicitly add a list of boolean values, indicating whether we should compute the hvp or not
 def hvp_conditional(f, primals, tangents, eval_hvp):
@@ -93,9 +89,12 @@ def batch_hmp_cond(f):
     return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None, None)), in_axes=(None, 1, 0))
 
 
+def batch_hmp(f):
 
+    def hvp_(primals, tangents):
+        return hvp(f, (primals, ), (tangents, ))
 
-
+    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None)), in_axes=(None, 1))
 
 
 
@@ -125,6 +124,9 @@ def get_HVPs(f, primals, tangents):
 
         return i - 1, tangents, mtx
 
+    # TODO understand if this is correct
+    num_tangents = tangents.shape[0]
+    batch_size, input_dim = primals.shape
 
     init_state = (
         num_tangents - 1,  # loop index (starting from last direction)
@@ -132,6 +134,22 @@ def get_HVPs(f, primals, tangents):
         jnp.zeros((batch_size, num_tangents, input_dim))  # result tensor
     )
 
-
-    _, _, mtx = jax.lax.while_loop(lambda tup: tup[0] >= 0, while_fn, (primals.shape[1], tangents, jnp.zeros(shape=(primals.shape[0], primals.shape[1], primals.shape[1]))))
+    _, _, mtx = jax.lax.while_loop(lambda tup: tup[0] >= 0, while_fn, init_state)
     return mtx
+
+
+
+
+def get_HVPs_conditional():
+    batch_hmp_cond_fn = batch_hmp_cond(MakeScalar(model))
+    hmp_pc_cond = batch_hmp_cond_fn(x, principal_components.T, compute_hvp)
+    hmp_pc_cond = jnp.transpose(hmp_pc_cond, (1, 0, 2))
+
+
+
+
+# TODO understand how this is used
+batch_hmp_fn = batch_hmp(MakeScalar(model))
+basis = jnp.eye(x.shape[-1], dtype=x.dtype)
+hmp_res = batch_hmp_fn(x, basis)
+hmp_res = jnp.transpose(hmp_res, (1, 0, 2))
