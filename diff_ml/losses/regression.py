@@ -7,8 +7,9 @@ import jax.numpy as jnp
 from jax import vmap
 from jaxtyping import Array, Float
 
-from diff_ml.hvp_stuff import get_HVPs
 
+from diff_ml.hvp_stuff import hvp_batch, cfd
+from diff_ml.model.bachelier import Bachelier
 
 RegressionLossFn = Callable[..., Float[Array, ""]]
 
@@ -48,6 +49,16 @@ class SobolevLossType(Enum):
     FIRST_ORDER = 1
     SECOND_ORDER_HUTCHINSON = 2
     SECOND_ORDER_PCA = 3
+
+
+
+def generate_random_vectors(key, k, dim, normalize=True):
+    key, subkey = jax.random.split(key)
+    vectors = jax.random.normal(subkey, shape=(k, dim))
+    if normalize:
+        vectors = vectors / jnp.linalg.norm(vectors, axis=1, keepdims=True)
+    return vectors
+
 
 
 @jax.named_scope("dml.losses.sobolev")
@@ -116,60 +127,106 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
 
 
+        
+            # get directions for hessian-vector products
 
+            # in random directions
+            key = jax.random.key(42)
+            rand_directions = generate_random_vectors(key, k=10, dim=x.shape[-1])
+            
 
-            # apply PCA to first-order gradients of predictions
-            dydx_used = dydx_pred
-            #dydx_used = dydx               # alternatively use dydx of reference model
-            #dydx_used = dydx_pred - dydx   # ore difference between the two
-            dydx_means = jnp.mean(dydx_used, axis=0)
-            tiled_dydx_used_means = jnp.tile(dydx_means, (dydx_used.shape[0], 1))
-            dydx_used_mean_adjusted = dydx_used - tiled_dydx_used_means
-            U, S, VT = jnp.linalg.svd(dydx_used_mean_adjusted, full_matrices=False)
-            principal_components = jnp.diag(S) @ VT
-
-            # select PCs that account for 95% of variance
-            kappa = 0.95
-            # singular values scaled to represent % of variance explained.
-            S_var = S**2 / jnp.sum(S**2)
-            compute_hvp_ = ~(jnp.cumsum(S_var) > kappa)
-            # if the first principal component is already accounting for 95% of the variance, compute_hvp will be just all False.
-            # Below we make use that at least the first principal component is always actively used.
-            compute_hvp = compute_hvp_.at[0].set(True)
-
-            ## find index k, s.t. the first k elements in S_var account for 95% of the variance
-            #k_pc_ = jnp.argmax(jnp.cumsum(S_var) >= kappa) # returns first occurence of True
-            #k_pc = jnp.maximum(k_pc_, jnp.ones_like(k_pc_))
+            ## TODO PCA stuff
+            ## apply PCA to first-order gradients of predictions
+            #dydx_used = dydx_pred
+            ##dydx_used = dydx               # alternatively use dydx of reference model
+            ##dydx_used = dydx_pred - dydx   # ore difference between the two
+            #dydx_means = jnp.mean(dydx_used, axis=0)
+            #tiled_dydx_used_means = jnp.tile(dydx_means, (dydx_used.shape[0], 1))
+            #dydx_used_mean_adjusted = dydx_used - tiled_dydx_used_means
+            #U, S, VT = jnp.linalg.svd(dydx_used_mean_adjusted, full_matrices=False)
+            #principal_components = jnp.diag(S) @ VT
             #
-            ## get HVPs of surrogate in PCA directions
-            ## TODO: understnad why we use f=model/surrogate and not f=bachelier
-            #mtx = get_HVPs(f=MakeScalar(model), primals=x, directions=principal_components)
-
-
-
-
-            # random vectors version
-
-
-
-
-
-
-
-
-
-
-
-
-
+            ## select PCs that account for 95% of variance
+            #kappa = 0.95
+            ## singular values scaled to represent % of variance explained.
+            #S_var = S**2 / jnp.sum(S**2)
+            #compute_hvp_ = ~(jnp.cumsum(S_var) > kappa)
+            ## if the first principal component is already accounting for 95% of the variance, compute_hvp will be just all False.
+            ## Below we make use that at least the first principal component is always actively used.
+            #compute_hvp = compute_hvp_.at[0].set(True)
+            #
+            ### find index k, s.t. the first k elements in S_var account for 95% of the variance
+            ##k_pc_ = jnp.argmax(jnp.cumsum(S_var) >= kappa) # returns first occurence of True
+            ##k_pc = jnp.maximum(k_pc_, jnp.ones_like(k_pc_))
+            ##
+            ### get HVPs of surrogate in PCA directions
+            ### TODO: understnad why we use f=model/surrogate and not f=bachelier
+            ##mtx = get_HVPs(f=MakeScalar(model), primals=x, directions=principal_components)
 
 
 
 
 
+            
+
+            # generate second-order targets via finite differences
+            
+            # directions = pca_directions
+            directions = rand_directions
+
+            # TODO get these parameters passed from ref_model in examples/bachelier/bachelier_second_order.py
+            # TODO make loss independent of Bachelier, pass payoff_fn
+            payoff_fn = Bachelier.antithetic_payoff(xs= # X
+                                                    paths= # inc1
+                                                    weights= # a
+                                                    strike_price= # K
+                                                    )
+            D_payoff_fn = jax.vmap(jax.grad(payoff_fn))
+
+        
+
+            h = 1e-1 # TODO understand what this is
 
 
 
+            
+            cfd_of_dpayoff_fn = cfd(D_payoff_fn, h, x, *additional_args_for_payoff_fn) # TODO inc1 = paths1 understand what this is and where it comes from
+
+        
+            ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions)
+            ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2))
+
+
+
+
+
+
+
+
+
+
+
+            # get second order predictions
+
+           
+            hvps_pred_rand = hvp_batch(f=MakeScalar(model), 
+                                         inputs=x, 
+                                         directions=rand_directions
+                                         )
+            #jax.debug.print("rand_directions.shape {shape}", shape=rand_directions.shape)
+            #jax.debug.print("hvps_rand.shape {shape}", shape=hvps_rand.shape)
+            #jax.debug.print("")
+
+
+
+
+
+
+
+
+
+            return 0.0
+        
 
 
 
@@ -192,6 +249,11 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
         sobolev_loss_fn = sobolev_second_order_loss
 
     return sobolev_loss_fn
+
+
+
+
+
 
 
 
