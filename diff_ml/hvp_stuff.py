@@ -204,6 +204,8 @@ def hvp_batch(f, inputs, directions):
 
 
 
+
+
 #def make_hvp_fn(f):
 #    def hvp_fn(point, direction):
 #        return jax.jvp(lambda x: eqx.filter_grad(f)(x), (point,), (direction,))[1]

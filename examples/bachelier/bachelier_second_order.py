@@ -119,12 +119,12 @@ def main():
         dnn.Normalization(x_train_mean, x_train_std), mlp, dnn.Denormalization(y_train_mean, y_train_std)
     )
 
-    # Train the surrogate in the usual manner
-    optim = optax.adam(learning_rate=1e-4)
-    surrogate_std = surrogate
-    surrogate_std, metrics_std = dml.train(
-        surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs
-    )
+    ## Train the surrogate in the usual manner
+    #optim = optax.adam(learning_rate=1e-4)
+    #surrogate_std = surrogate
+    #surrogate_std, metrics_std = dml.train(
+    #    surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs
+    #)
 
     # Train the surrogate using sobolev loss
     optim = optax.adam(learning_rate=1e-4)
@@ -143,8 +143,8 @@ def main():
     # Plot loss curve
     # plt.rcParams.update({"text.usetex": True, "font.family": "serif", "font.serif": "EB Garamond", "font.size": 20})
     plt.figure()
-    plt.plot(jnp.sqrt(metrics_std["train_loss"]), label="Vanilla Train Loss")
-    plt.plot(metrics_std["test_loss"], label="Vanilla Test Loss")
+    #plt.plot(jnp.sqrt(metrics_std["train_loss"]), label="Vanilla Train Loss")
+    #plt.plot(metrics_std["test_loss"], label="Vanilla Test Loss")
     plt.plot(jnp.sqrt(metrics["train_loss"]), label="Sobolev Train Loss")
     plt.plot(metrics["test_loss"], label="Sobolev Test Loss")
     plt.title("Surrogates for Bachelier Basket Option")
@@ -177,9 +177,9 @@ def main():
 
         return pred_y, pred_dydx, pred_ddyddx
 
-    # visualize normal predictions
-    pred_y, pred_dydx, pred_ddyddx = predict(surrogate_std, test_ds["x"])
-    plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds)
+    ## visualize normal predictions
+    #pred_y, pred_dydx, pred_ddyddx = predict(surrogate_std, test_ds["x"])
+    #plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds)
 
     # visualize (second order) predictions
     pred_y, pred_dydx, pred_ddyddx = predict(surrogate, test_ds["x"])
