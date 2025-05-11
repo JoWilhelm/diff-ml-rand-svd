@@ -238,17 +238,13 @@ def hvp_batch(f, inputs, directions):
 def cfd(f, h, x, *args):
     
     def cfd_(direction):
+      #jax.debug.print("in cfd_ direction.shape: {shape}", shape=direction.shape)
+      
       xph = x + h * direction 
       xmh = x - h * direction 
       fd_of_f = (f(xph, *args) - f(xmh, *args)) / (2 * h)
-      # jax.debug.print("fd_of_f = {fd}", fd=fd_of_f)
-    
-      # fd_of_f = vmap(jnp.multiply)(fd_of_f, jnp.sign(v))
-      # fd_of_f = jnp.multiply(fd_of_f, jnp.sign(v))
-      # jax.debug.print("fd_of_f_after = {fd}", fd=fd_of_f)
-    
-      # jax.debug.print("shape of v: {v}", v=v.shape)
-      # jax.debug.print("fd_of_f.shape: {fd}", fd=fd_of_f.shape)
+
+      #jax.debug.print("in cfd_ fd_of_f.shape: {fd}", fd=fd_of_f.shape)
       return fd_of_f
     
     return cfd_

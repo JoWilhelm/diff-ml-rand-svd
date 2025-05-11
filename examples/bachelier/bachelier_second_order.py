@@ -58,18 +58,18 @@ def main():
     n_samples: int = 8 * 1024
     key, subkey = jrandom.split(key)
     weights = jrandom.uniform(subkey, shape=(n_dims,), minval=1.0, maxval=10.0)
-    model = Bachelier(key, n_dims, weights)
+    ref_model = Bachelier(key, n_dims, weights)
 
 
 
     # Generate data
-    train_ds = model.sample(n_samples)
-    test_ds = model.analytic(n_samples)
+    train_ds = ref_model.sample(n_samples)
+    test_ds = ref_model.analytic(n_samples)
 
 
 
 
-    n_epochs = 20 # 100
+    n_epochs = 100
     n_batch_size = 256
 
     key, subkey = jrandom.split(key)
@@ -89,7 +89,7 @@ def main():
     ys_test = jnp.asarray(test_ds["y"])
     zs_test = jnp.asarray(test_ds["dydx"])
 
-    baskets = model.baskets(xs_test)
+    baskets = ref_model.baskets(xs_test)
 
     vis_dim: int = 0
     plt.figure()
@@ -119,16 +119,16 @@ def main():
         dnn.Normalization(x_train_mean, x_train_std), mlp, dnn.Denormalization(y_train_mean, y_train_std)
     )
 
-    ## Train the surrogate in the usual manner
-    #optim = optax.adam(learning_rate=1e-4)
-    #surrogate_std = surrogate
-    #surrogate_std, metrics_std = dml.train(
-    #    surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs
-    #)
+    # Train the surrogate in the usual manner
+    optim = optax.adam(learning_rate=1e-4)
+    surrogate_std = surrogate
+    surrogate_std, metrics_std = dml.train(
+        surrogate_std, loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs
+    )
 
     # Train the surrogate using sobolev loss
     optim = optax.adam(learning_rate=1e-4)
-    sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse, method=dml.losses.SobolevLossType.SECOND_ORDER_PCA)
+    sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse, method=dml.losses.SobolevLossType.SECOND_ORDER_PCA, ref_model=ref_model)
     surrogate, metrics = dml.train(
         surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
@@ -143,8 +143,8 @@ def main():
     # Plot loss curve
     # plt.rcParams.update({"text.usetex": True, "font.family": "serif", "font.serif": "EB Garamond", "font.size": 20})
     plt.figure()
-    #plt.plot(jnp.sqrt(metrics_std["train_loss"]), label="Vanilla Train Loss")
-    #plt.plot(metrics_std["test_loss"], label="Vanilla Test Loss")
+    plt.plot(jnp.sqrt(metrics_std["train_loss"]), label="Vanilla Train Loss")
+    plt.plot(metrics_std["test_loss"], label="Vanilla Test Loss")
     plt.plot(jnp.sqrt(metrics["train_loss"]), label="Sobolev Train Loss")
     plt.plot(metrics["test_loss"], label="Sobolev Test Loss")
     plt.title("Surrogates for Bachelier Basket Option")
@@ -176,6 +176,10 @@ def main():
         pred_ddyddx = vmap(jax.hessian(MakeScalar(model)))(xs)
 
         return pred_y, pred_dydx, pred_ddyddx
+
+    # visualize normal predictions
+    pred_y, pred_dydx, pred_ddyddx = predict(surrogate_std, test_ds["x"])
+    plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds)
 
     # visualize (second order) predictions
     pred_y, pred_dydx, pred_ddyddx = predict(surrogate, test_ds["x"])

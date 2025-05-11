@@ -208,6 +208,7 @@ class Bachelier:
             "x": spots_1,
             "y": payoffs_vjp,
             "dydx": differentials_vjp,
+            "paths1": paths_1, 
         }
     
 

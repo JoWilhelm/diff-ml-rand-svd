@@ -7,9 +7,12 @@ import jax.numpy as jnp
 from jax import vmap
 from jaxtyping import Array, Float
 
+from functools import partial
 
+import diff_ml as dml
 from diff_ml.hvp_stuff import hvp_batch, cfd
 from diff_ml.model.bachelier import Bachelier
+
 
 RegressionLossFn = Callable[..., Float[Array, ""]]
 
@@ -60,9 +63,9 @@ def generate_random_vectors(key, k, dim, normalize=True):
     return vectors
 
 
-
+# TODO separate first order and second order loss functions
 @jax.named_scope("dml.losses.sobolev")
-def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossType.FIRST_ORDER) -> RegressionLossFn:
+def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossType.FIRST_ORDER, ref_model) -> RegressionLossFn:
     sobolev_loss_fn = loss_fn
 
     if method == SobolevLossType.FIRST_ORDER:
@@ -106,17 +109,18 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
         #    beta = lambda_scale / n_elements
         #    return alpha, beta
 
+        def loss_balance() -> tuple[float, float, float]:
+            return 1/3, 1/3, 1/3
 
 
-        def sobolev_second_order_loss(model, batch) -> Float[Array, ""]:
+
+        def sobolev_second_order_loss(model, batch, ref_model=ref_model) -> Float[Array, ""]:
 
             # unpack dictionary for readability
-            x, y, dydx = batch["x"], batch["y"], batch["dydx"]
+            x, y, dydx, paths1 = batch["x"], batch["y"], batch["dydx"], batch["paths1"]
             
+    
 
-
-            # TODO alpha, beta, gamma = loss_balance()
-            
 
 
             # get surrogate prediction, first-order derivative and hessian
@@ -126,9 +130,11 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             assert dydx.shape == dydx_pred.shape
 
 
-
+            value_loss = loss_fn(y, y_pred)
+            grad_loss = loss_fn(dydx, dydx_pred)
+    
         
-            # get directions for hessian-vector products
+            # get directions for hessian probing
 
             # in random directions
             key = jax.random.key(42)
@@ -174,26 +180,53 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             # directions = pca_directions
             directions = rand_directions
 
-            # TODO get these parameters passed from ref_model in examples/bachelier/bachelier_second_order.py
-            # TODO make loss independent of Bachelier, pass payoff_fn
-            payoff_fn = Bachelier.antithetic_payoff(xs= # X
-                                                    paths= # inc1
-                                                    weights= # a
-                                                    strike_price= # K
-                                                    )
-            D_payoff_fn = jax.vmap(jax.grad(payoff_fn))
-
-        
-
-            h = 1e-1 # TODO understand what this is
-
-
-
+            # TODO make loss function independent of Bachelier, pass payoff_fn
             
-            cfd_of_dpayoff_fn = cfd(D_payoff_fn, h, x, *additional_args_for_payoff_fn) # TODO inc1 = paths1 understand what this is and where it comes from
+            payoff_fn = partial(ref_model.antithetic_payoff, 
+                                    weights=ref_model.weights, # a
+                                    strike_price=ref_model.strike_price, # K
+                                )
+            
+            ## old explicit payoff
+            #smooth_relu = dml.smoothing.sigmoidal_smoothing(lambda x: jnp.zeros_like(x), lambda x: x)
+            #def payoff(X, inc1, a, K, anti=False):
+            #    S2 = X + inc1
+            #    bkt2 = jnp.dot(S2, a)
+            #    pay = smooth_relu(bkt2 - K)
+            #    if anti: # two antithetic paths
+            #        S2a = X - inc1
+            #        bkt2a = jnp.dot(S2a, a)
+            #        paya = smooth_relu(bkt2a - K)
+            #        Y = 0.5 * (pay + paya)
+            #    else: # standard
+            #        Y = pay
+            #    return Y
+            #payoff_fn = partial(payoff, 
+            #                    a=ref_model.weights, 
+            #                    K=ref_model.strike_price, 
+            #                    anti=True)
 
-        
+
+            D_payoff_fn = jax.vmap(jax.grad(payoff_fn))
+            
+            #jax.debug.print("directions.shape {shape}", shape=directions.shape)
+            #jax.debug.print("paths1.shape {shape}", shape=paths1.shape)
+            #jax.debug.print("x.shape {shape}", shape=x.shape)
+            #jax.debug.print("")
+            #return .0
+
+            h = 1e-1
+            cfd_of_dpayoff_fn = cfd(D_payoff_fn, h, x, paths1) # TODO inc1 = paths1 understand what this is and where it comes from
             ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions)
+            
+
+
+
+            # old original
+            #cfd_of_dpayoff_fn = cfd(D_payoff_fn, h, x, *additional_args_for_payoff_fn)
+            #cfd_of_dpayoff = jax.vmap(cfd_of_dpayoff_fn)
+            #ddpayoff = cfd_of_dpayoff(directions)
+
             ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2))
 
 
@@ -208,7 +241,6 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
             # get second order predictions
 
-           
             hvps_pred_rand = hvp_batch(f=MakeScalar(model), 
                                          inputs=x, 
                                          directions=rand_directions
@@ -220,25 +252,21 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
 
 
+            hessian_loss = loss_fn(ddpayoff, hvps_pred_rand)
 
 
-
-
-
-            return 0.0
-        
 
 
 
             
+            alpha, beta, gamma = loss_balance()
+            
+            loss = alpha * value_loss + beta * grad_loss + gamma * hessian_loss
 
-            value_loss = loss_fn(y, y_pred)
-            grad_loss = loss_fn(dydx, dydx_pred)
 
-            n_dims = x.shape[-1]
-            alpha, beta = loss_balance(n_dims)
 
-            return alpha * value_loss + beta * grad_loss
+            return loss
+    
 
 
 
