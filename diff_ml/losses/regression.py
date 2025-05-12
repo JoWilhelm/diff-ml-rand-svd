@@ -10,7 +10,7 @@ from jaxtyping import Array, Float
 from functools import partial
 
 import diff_ml as dml
-from diff_ml.hvp_stuff import hvp_batch, cfd
+from diff_ml.hvp_stuff import hvp_batch, hvp_batch_cond, cfd_fn, cfd_cond_fn
 from diff_ml.model.bachelier import Bachelier
 
 
@@ -113,7 +113,26 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
         #    return alpha, beta
 
         def loss_balance() -> tuple[float, float, float]:
+
             return 1/3, 1/3, 1/3
+
+        def pca_loss_balance():        
+            lam = 1
+            # NOTE: An appropriate eta is crucial for a working second-order method
+            
+            k_pc = 3 # TODO make dynamic
+            n_dims = 7 # TODO make dynamic
+            
+
+            eta = (k_pc / n_dims) ** 2
+            scale = (1 + lam * n_dims + eta * n_dims * n_dims)
+            alpha = 1 / scale
+            beta = (lam * n_dims) / scale
+            gamma = 1.0 - alpha - beta
+
+            return 0.25, 0.25, 0.5
+            return alpha, beta, gamma
+
 
 
 
@@ -134,7 +153,9 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             grad_loss = loss_fn(dydx, dydx_pred)
 
 
-
+            
+            # second order 
+            
             # get directions for hessian probing for second-order loss
 
             # in random directions
@@ -165,70 +186,107 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             kappa = 0.95
             # singular values scaled to represent % of variance explained.
             S_var = S**2 / jnp.sum(S**2)
-            compute_hvp_ = ~(jnp.cumsum(S_var) > kappa)
-            compute_hvp = compute_hvp_.at[0].set(True) # make use that at least the first principal component is always actively used.
+            eval_hvp = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
             
-
-            #jax.debug.print("compute_hvp {v}", v=compute_hvp)
+            #jax.debug.print("eval_hvp {v}", v=eval_hvp)
             #jax.debug.print("")
             #return .0
 
-            ## get HVPs of surrogate in PCA directions
-            ## TODO: understnad why we use f=model/surrogate and not f=bachelier
-            #mtx = get_HVPs(f=MakeScalar(model), primals=x, directions=principal_components)
 
 
-
-
-
-
-            # ----
-            
-
-            # generate second-order targets via finite differences
             
             #directions = pca_directions
             directions = rand_directions
 
+
+
+
+            # for testing
+            eval_hvp = jnp.array([True, False, False, False, False, False, False]) 
+            i = 128
+
+
+
+            # ----  generate second-order targets via finite differences
+            
+
+            # TODO restructure for readability
             payoff_fn = partial(ref_model.antithetic_payoff, # TODO make loss function independent of Bachelier, pass payoff_fn
                                     weights=ref_model.weights,
                                     strike_price=ref_model.strike_price
                                 )
             D_payoff_fn = jax.vmap(jax.grad(payoff_fn)) # TODO understand all these vmaps
             h = 1e-1
-            cfd_of_dpayoff_fn = cfd(D_payoff_fn, h, x, paths1) # TODO inc1 = paths1 understand what this is and where it comes from
+            cfd_of_dpayoff_fn = cfd_fn(D_payoff_fn, h, x, paths1) # TODO understand what paths1=inc1 is and where it comes from
+            
+
+            
+
+            # all directions 
             ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions) 
             ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2))
-            #jax.debug.print("directions.shape {shape}", shape=directions.shape)
-            #jax.debug.print("paths1.shape {shape}", shape=paths1.shape)
-            #jax.debug.print("x.shape {shape}", shape=x.shape)
-            #jax.debug.print("")
-    
+            jax.debug.print("ddpayoff[{i}] {v}", i=i, v=ddpayoff[i])
+            
+
+            # conditional directions
+            cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
+            ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_hvp)
+            ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
+            jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i])
 
 
 
 
 
-            # second order predictions
 
+
+            # ----  get HVPs of surrogate predictions
+
+
+            # all directions
             hvps_pred = hvp_batch(f=MakeScalar(model), 
                                          inputs=x, 
                                          directions=directions
                                          )
-            #jax.debug.print("rand_directions.shape {shape}", shape=rand_directions.shape)
-            #jax.debug.print("hvps_rand.shape {shape}", shape=hvps_rand.shape)
+            #jax.debug.print("directions.shape {shape}", shape=directions.shape)
+            #jax.debug.print("hvps_pred.shape {shape}", shape=hvps_pred.shape)
+            jax.debug.print("hvps_pred[{i}] {v}", i=i, v=hvps_pred[i])
             #jax.debug.print("")
+            # return .0
 
 
 
-
-
-
-
-            hessian_loss = loss_fn(ddpayoff, hvps_pred)
-
+            # TODO  there is an error here:
+            #       the hvps where eval_hvp == True are not the same as 
+            #       the ones computed with the unconditional directions
             
-            alpha, beta, gamma = loss_balance()
+            # conditional directions
+            hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
+                                         inputs=x, 
+                                         directions=directions,
+                                         eval_hvp=eval_hvp
+                                         )
+            #jax.debug.print("directions.shape {shape}", shape=directions.shape)
+            #jax.debug.print("compute_hvp {v}", v=compute_hvp)
+            #jax.debug.print("hvps_cond_pred.shape {shape}", shape=hvps_cond_pred.shape)
+            jax.debug.print("hvps_cond_pred[{i}] {v}", i=i, v=hvps_cond_pred[i])
+            jax.debug.print("")
+            return .0
+
+
+
+
+
+
+
+
+            #hessian_loss = loss_fn(ddpayoff, hvps_pred)
+            #alpha, beta, gamma = loss_balance()
+
+            hessian_loss = loss_fn(ddpayoff_cond, hvps_cond_pred)
+            alpha, beta, gamma = pca_loss_balance()
+            
+            #jax.debug.print("alpha: {a:.2f}, beta: {b:.2f}, gamma: {c:.2f}", a=alpha, b=beta, c=gamma)
             
             loss = alpha * value_loss + beta * grad_loss + gamma * hessian_loss
 

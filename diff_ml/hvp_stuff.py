@@ -66,25 +66,6 @@ from functools import partial
 #
 
 
-## this is a version where we explicitly add a list of boolean values, indicating whether we should compute the hvp or not
-#def hvp_conditional(f, primals, tangents, eval_hvp):
-#    # jax.debug.print("primals {x}", x=primals)
-#    # jax.debug.print("tangents {x}", x=tangents)
-#    # jax.debug.print("eval_hvp {x}", x=eval_hvp)
-#
-#    # jax.lax.cond(eval_hvp, lambda _: jax.debug.print("using hvp: {eval}", eval=eval_hvp), lambda _: jax.debug.print("not using hvp: {eval}", eval=~eval_hvp), None)
-#
-#    # res = hvp(f, primals, tangents)
-#    # jax.debug.print("evalhvp.shape {res}", res=res.shape)
-#    return jax.lax.cond(eval_hvp, lambda _: hvp(f, primals, tangents), lambda _: jnp.zeros(shape=(primals[0].shape[-1],)), None)
-#
-#def batch_hmp_cond(f):
-#
-#    def hvp_(primals, tangents, eval_hvp):
-#        return hvp_conditional(f, (primals,), (tangents,), eval_hvp)
-#
-#    return eqx.filter_vmap(eqx.filter_vmap(hvp_, in_axes=(0, None, None)), in_axes=(None, 1, 0))
-
 
 
 
@@ -185,6 +166,24 @@ from functools import partial
 
 
 
+
+
+
+
+
+
+# TODO somehow combine the two hvp_batch_ functions to reduce redundancy
+
+def hvp(f, x, v):
+    return jax.jvp(lambda x_: eqx.filter_grad(f)(x_), (x,), (v,))[1]
+
+# this is a version where we explicitly add a list of boolean values, indicating whether we should compute the hvp for that direction
+# TODO isnt this the same as just setting the undesired directions to 0? Then we could just use the normal hvp_batch function
+def hvp_cond(f, x, v, eval_hvp):                                    #jnp.zeros(shape=(x.shape[-1],))
+    return jax.lax.cond(eval_hvp, lambda _: hvp(f, x, v), lambda _: jnp.zeros_like(v), None)
+
+
+
 def hvp_batch(f, inputs, directions):
     """
     Compute Hessian-vector products: H(x_i) @ v_j
@@ -196,9 +195,32 @@ def hvp_batch(f, inputs, directions):
         hvps: [num_inputs, num_directions, input_dim]
     """
     def hvp_fn(x, v):
-        return jax.jvp(lambda x_: eqx.filter_grad(f)(x_), (x,), (v,))[1]
+        return hvp(f, x, v)
     batched = eqx.filter_vmap(eqx.filter_vmap(hvp_fn, in_axes=(0, None)), in_axes=(None, 0))
     return jnp.transpose(batched(inputs, directions), (1, 0, 2))
+
+
+
+def hvp_batch_cond(f, inputs, directions, eval_hvp):
+    """
+    Compute Hessian-vector products: H(x_i) @ v_j ifff eval_hvp[j] == True
+    Args:
+        f: scalar-valued function f: R^n -> R
+        inputs: [num_inputs, input_dim]
+        directions: [num_directions, input_dim]
+        eval_hvp: [num_directions] boolean array
+            if True, compute H(x_i) @ v_j
+            if False, return 0
+    Returns:
+        hvps: [num_inputs, num_directions, input_dim]
+            where hvps[i, j] = np.zeros if eval_hvp[j] == False
+    """
+    def hvp_cond_fn(x, v, eval_hvp):
+        return hvp_cond(f, x, v, eval_hvp)
+    batched = eqx.filter_vmap(eqx.filter_vmap(hvp_cond_fn, in_axes=(0, None, None)), in_axes=(None, 1, 0))
+    return jnp.transpose(batched(inputs, directions, eval_hvp), (1, 0, 2))
+
+
 
 
 
@@ -236,8 +258,8 @@ def hvp_batch(f, inputs, directions):
 
 
 
-# TODO put this somewhere else, separate file?
-def cfd(f, h, x, *args):
+# TODO put cfd stuff this somewhere else, separate file?
+def cfd_fn(f, h, x, *args):
     
     def cfd_(direction):
       #jax.debug.print("in cfd_ direction.shape: {shape}", shape=direction.shape)
@@ -250,4 +272,11 @@ def cfd(f, h, x, *args):
       return fd_of_f
     
     return cfd_
-    
+
+
+
+def cfd_cond_fn(f, batch_size):
+    def cfd_cond_(direction, eval_hvp):
+        return jax.lax.cond(eval_hvp, lambda direction: f(direction), lambda _: jnp.zeros(shape=(batch_size, direction.shape[-1])), direction)
+        
+    return eqx.filter_vmap(cfd_cond_, in_axes=(0, 0))
