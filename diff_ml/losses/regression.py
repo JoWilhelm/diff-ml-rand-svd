@@ -160,7 +160,7 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
             # in random directions
             key = jax.random.key(42)
-            rand_directions = generate_random_vectors(key, k=7, dim=x.shape[-1])
+            rand_directions = generate_random_vectors(key, k=3, dim=x.shape[-1])
             
 
             # TODO PCA stuff
@@ -201,9 +201,9 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
 
 
-            # for testing
-            eval_hvp = jnp.array([True, False, False, False, False, False, False]) 
-            i = 128
+            ## for testing
+            #eval_hvp = jnp.array([True, True]) 
+            #i = 128
 
 
 
@@ -225,14 +225,14 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             # all directions 
             ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions) 
             ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2))
-            jax.debug.print("ddpayoff[{i}] {v}", i=i, v=ddpayoff[i])
+            #jax.debug.print("ddpayoff[{i}] {v}", i=i, v=ddpayoff[i])
             
 
-            # conditional directions
-            cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
-            ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_hvp)
-            ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
-            jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i])
+            ## conditional directions
+            #cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
+            #ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_hvp)
+            #ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
+            ##jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i])
 
 
 
@@ -242,7 +242,6 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
             # ----  get HVPs of surrogate predictions
 
-
             # all directions
             hvps_pred = hvp_batch(f=MakeScalar(model), 
                                          inputs=x, 
@@ -250,7 +249,7 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
                                          )
             #jax.debug.print("directions.shape {shape}", shape=directions.shape)
             #jax.debug.print("hvps_pred.shape {shape}", shape=hvps_pred.shape)
-            jax.debug.print("hvps_pred[{i}] {v}", i=i, v=hvps_pred[i])
+            #jax.debug.print("hvps_pred[{i}][0] {v}", i=i, v=hvps_pred[i][0])
             #jax.debug.print("")
             # return .0
 
@@ -260,18 +259,20 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             #       the hvps where eval_hvp == True are not the same as 
             #       the ones computed with the unconditional directions
             
-            # conditional directions
-            hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
-                                         inputs=x, 
-                                         directions=directions,
-                                         eval_hvp=eval_hvp
-                                         )
+            ## conditional directions
+            #hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
+            #                             inputs=x, 
+            #                             directions=directions,
+            #                             eval_hvp=eval_hvp
+            #                             )
             #jax.debug.print("directions.shape {shape}", shape=directions.shape)
             #jax.debug.print("compute_hvp {v}", v=compute_hvp)
             #jax.debug.print("hvps_cond_pred.shape {shape}", shape=hvps_cond_pred.shape)
-            jax.debug.print("hvps_cond_pred[{i}] {v}", i=i, v=hvps_cond_pred[i])
-            jax.debug.print("")
-            return .0
+            #jax.debug.print("hvps_cond_pred[{i}][0] {v}", i=i, v=hvps_cond_pred[i][0])
+            #jax.debug.print("")
+            #jax.debug.print("")
+            #jax.debug.print("")
+            #return .0
 
 
 
@@ -280,11 +281,10 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
 
 
-            #hessian_loss = loss_fn(ddpayoff, hvps_pred)
-            #alpha, beta, gamma = loss_balance()
-
-            hessian_loss = loss_fn(ddpayoff_cond, hvps_cond_pred)
-            alpha, beta, gamma = pca_loss_balance()
+            hessian_loss = loss_fn(ddpayoff, hvps_pred)
+            alpha, beta, gamma = loss_balance()
+            #hessian_loss = loss_fn(ddpayoff_cond, hvps_cond_pred)
+            #alpha, beta, gamma = pca_loss_balance()
             
             #jax.debug.print("alpha: {a:.2f}, beta: {b:.2f}, gamma: {c:.2f}", a=alpha, b=beta, c=gamma)
             

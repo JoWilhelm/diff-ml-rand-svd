@@ -175,11 +175,13 @@ from functools import partial
 # TODO somehow combine the two hvp_batch_ functions to reduce redundancy
 
 def hvp(f, x, v):
+    #jax.debug.print("hvp x: {x}, v: {v}", x=x, v=v)
     return jax.jvp(lambda x_: eqx.filter_grad(f)(x_), (x,), (v,))[1]
 
 # this is a version where we explicitly add a list of boolean values, indicating whether we should compute the hvp for that direction
 # TODO isnt this the same as just setting the undesired directions to 0? Then we could just use the normal hvp_batch function
-def hvp_cond(f, x, v, eval_hvp):                                    #jnp.zeros(shape=(x.shape[-1],))
+def hvp_cond(f, x, v, eval_hvp):                                  #jnp.zeros(shape=(x.shape[-1],))
+    #jax.debug.print("hvp_cond x: {x}, v: {v}", x=x, v=v)
     return jax.lax.cond(eval_hvp, lambda _: hvp(f, x, v), lambda _: jnp.zeros_like(v), None)
 
 
@@ -217,7 +219,7 @@ def hvp_batch_cond(f, inputs, directions, eval_hvp):
     """
     def hvp_cond_fn(x, v, eval_hvp):
         return hvp_cond(f, x, v, eval_hvp)
-    batched = eqx.filter_vmap(eqx.filter_vmap(hvp_cond_fn, in_axes=(0, None, None)), in_axes=(None, 1, 0))
+    batched = eqx.filter_vmap(eqx.filter_vmap(hvp_cond_fn, in_axes=(0, None, None)), in_axes=(None, 0, 0))
     return jnp.transpose(batched(inputs, directions, eval_hvp), (1, 0, 2))
 
 
