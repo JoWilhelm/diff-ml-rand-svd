@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import equinox as eqx
 from typing import Tuple
 
-
 from functools import partial
 
 
@@ -282,3 +281,8 @@ def cfd_cond_fn(f, batch_size):
         return jax.lax.cond(eval_hvp, lambda direction: f(direction), lambda _: jnp.zeros(shape=(batch_size, direction.shape[-1])), direction)
         
     return eqx.filter_vmap(cfd_cond_, in_axes=(0, 0))
+
+
+
+
+

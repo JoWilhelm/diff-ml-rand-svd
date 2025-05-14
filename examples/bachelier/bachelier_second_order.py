@@ -110,7 +110,7 @@ def main():
 
     # Specify the surrogate model architecture
     key, subkey = jrandom.split(key)
-    mlp = eqx.nn.MLP(key=subkey, in_size=n_dims, out_size="scalar", width_size=20, depth=3, activation=jax.nn.silu)
+    mlp = eqx.nn.MLP(key=subkey, in_size=n_dims, out_size="scalar", width_size=20, depth=3, activation=jax.nn.silu) # jax.nn.silu
 
     key, subkey = jrandom.split(key)
     mlp = init_model_weights(mlp, jax.nn.initializers.glorot_normal(), key=subkey)
@@ -133,9 +133,6 @@ def main():
         surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)
 
 
-
-    # TODO integrate second order learning with HVP PCA
-    # TODO generate mising second-order training data in pca loss fn
 
     
     

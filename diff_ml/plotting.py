@@ -37,21 +37,21 @@ def plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds):
     axes[0].plot(baskets, pred_y, '.', markersize=1)
     axes[0].plot(baskets, y_test, '.', markersize=1)
     axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
-    axes[0].set_title(f"Values \n {losses.rmse(pred_y, y_test)}")
+    axes[0].set_title(f"Values \n rmse: {losses.rmse(pred_y, y_test)}")
 
     # Plot the second subplot
     dydx_idx = 0
     axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1)
     axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1)
     axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
-    axes[1].set_title(f"Differentials\n{losses.rmse(pred_dydx, dydx_test)}")
+    axes[1].set_title(f"Differentials\nrmse: {losses.rmse(pred_dydx, dydx_test)}")
 
     # Calculate and plot gammas in the third subplot
     pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
     axes[2].plot(baskets, pred_gammas, '.', markersize=1, label='Pred')
     axes[2].plot(baskets, gammas, '.', markersize=1, label='True')
     axes[2].legend()
-    axes[2].set_title(f"Gammas\n{losses.rmse(pred_gammas, gammas)}")
+    axes[2].set_title(f"Gammas\nrmse: {losses.rmse(pred_gammas, gammas)}")
 
     # Adjust the layout and save the figure to a PDF file
     plt.tight_layout()
