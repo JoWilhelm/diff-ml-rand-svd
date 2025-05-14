@@ -13,7 +13,7 @@ from jax import vmap
 import diff_ml as dml
 import diff_ml.nn as dnn
 from diff_ml.model import Bachelier
-from diff_ml.nn.utils import init_model_weights
+from diff_ml.nn.utils import init_model_weights, predict
 from diff_ml.typing import Data
 
 from diff_ml.plotting import plot_eval
@@ -75,6 +75,7 @@ def main():
     key, subkey = jrandom.split(key)
     train_gen = train_generator(train_ds, n_samples, n_batch_size, key=subkey)
 
+    # TODO move to diff_ml/plotting.py
     # Plot data
     x_train_mean = jnp.mean(train_ds["x"])
     x_train_std = jnp.std(train_ds["x"])
@@ -97,7 +98,6 @@ def main():
     plt.plot(baskets, ys_test, ".", label="Payoff Test", markersize=1)
     plt.legend()
     plt.savefig(f"{prefix_path}/payoff.pdf")
-
     plt.figure()
     plt.plot(xs_train[:, vis_dim], zs_train[:, vis_dim], ".", label="Delta Training", markersize=1)
     plt.plot(baskets, zs_test[:, vis_dim], ".", label="Delta Test", markersize=1)
@@ -119,6 +119,9 @@ def main():
         dnn.Normalization(x_train_mean, x_train_std), mlp, dnn.Denormalization(y_train_mean, y_train_std)
     )
 
+
+
+
     ## Train the surrogate in the usual manner
     #optim = optax.adam(learning_rate=1e-4)
     #surrogate_std = surrogate
@@ -135,8 +138,10 @@ def main():
 
 
     
-    
 
+    
+    
+    # TODO move to diff_ml/plotting.py
     # Plot loss curve
     # plt.rcParams.update({"text.usetex": True, "font.family": "serif", "font.serif": "EB Garamond", "font.size": 20})
     plt.figure()
@@ -151,34 +156,11 @@ def main():
     plt.savefig(f"{prefix_path}/loss.pdf", bbox_inches="tight")
 
 
-
-
-
-
-
-
-
-
-    # TODO put this somewhere where it makes more sense, separate file?
-
-    class MakeScalar(eqx.Module):
-        model: eqx.Module
-
-        def __call__(self, *args, **kwargs):
-            out = self.model(*args, **kwargs)
-            return jnp.reshape(out, ())
-    
-    def predict(model, xs):
-        pred_y, pred_dydx = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(xs)
-        pred_ddyddx = vmap(jax.hessian(MakeScalar(model)))(xs)
-
-        return pred_y, pred_dydx, pred_ddyddx
-
-    ## visualize normal predictions
+    ## visualize predictions of normal model
     #pred_y, pred_dydx, pred_ddyddx = predict(surrogate_std, test_ds["x"])
     #plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds)
 
-    # visualize (second order) predictions
+    # visualize predictions of model trained on second order data
     pred_y, pred_dydx, pred_ddyddx = predict(surrogate, test_ds["x"])
     plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds)
 

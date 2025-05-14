@@ -7,43 +7,12 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 from jax import vmap
-from jaxtyping import Float, Array, ArrayLike, PyTree
+from jaxtyping import ArrayLike, PyTree
 from tqdm import tqdm
-
+from diff_ml.nn.utils import LossState
 from diff_ml.typing import Data, DataGenerator
 
 
-
-
-# TODO put this somewhere where it makes more sense
-class LossState(eqx.Module):
-    losses: Float[Array, "n_losses"] = jnp.ones(3) * 1/3
-    lambdas: Float[Array, "n_losses"] = jnp.ones(3) * 1/3
-    initial_losses: Float[Array, "n_losses"] = jnp.ones(3) * 1/3
-    accum_losses: Float[Array, "n_losses"] = jnp.zeros(3)
-    prev_mean_losses: Float[Array, "n_losses"] = jnp.zeros(3)
-    current_iter: Float[Array, "n_losses"] = jnp.zeros(3)
-
-    def update_losses(state, new_value: Float[Array, "n_losses"]): # -> LossState:
-        return LossState(new_value, state.lambdas, state.initial_losses, state.accum_losses, state.prev_mean_losses, state.current_iter)
-
-    def update_lambdas(state, new_value: Float[Array, "n_losses"]):# -> LossState:
-        return LossState(state.losses, new_value, state.initial_losses, state.accum_losses, state.prev_mean_losses,  state.current_iter)
-        
-    def update_initial_losses(state, new_value: Float[Array, "n_losses"]): # -> LossState:
-        return LossState(state.losses, state.lambdas, new_value, state.accum_losses, state.prev_mean_losses,  state.current_iter)
-        
-    def update_accum_losses(state, new_value: Float[Array, "n_losses"]): # -> LossState:
-        return LossState(state.losses, state.lambdas, state.initial_losses, new_value, state.prev_mean_losses,  state.current_iter)
-        
-    def update_current_iter(state, new_value: Float[Array, "n_losses"]): # -> LossState:
-        return LossState(state.losses, state.lambdas, state.initial_losses, state.accum_losses, state.prev_mean_losses,  new_value)
-
-    def update_prev_mean_losses(state, new_value: Float[Array, "n_losses"]): # -> LossState:
-        return LossState(state.losses, state.lambdas, state.initial_losses, state.accum_losses, new_value,  state.current_iter)
-
-    def __repr__(self):
-        return "LossState"
 
 
 
@@ -94,10 +63,7 @@ def train(
     train_loss = jnp.zeros(1)
     batch_size = len(next(train_data)["x"])
     metrics = {"train_loss": jnp.zeros(n_epochs), "test_loss": jnp.zeros(n_epochs)}
-
-    loss_state = LossState()
     loss_state = LossState(jnp.array([0.0, 0.0, 1.0]), jnp.array([1/3, 1/3, 1/3]), jnp.array([0.0, 0.0, 1.0]), jnp.array([0.0, 0.0, 0.0]), jnp.array([0.0, 0.0, 0.0])) 
-
 
     pbar = tqdm(range(n_epochs))
     for epoch in pbar:
