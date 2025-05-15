@@ -164,6 +164,33 @@ from functools import partial
 
 
 
+#def make_hvp_fn(f):
+#    def hvp_fn(point, direction):
+#        return jax.jvp(lambda x: eqx.filter_grad(f)(x), (point,), (direction,))[1]
+#    return hvp_fn
+#
+#
+#def compute_hvp_batch(f, inputs, directions):
+#    """
+#    Compute Hessian-vector products: H(x_i) @ v_j
+#    Args:
+#        f: scalar-valued function f: R^n -> R
+#        inputs: [batch_size, input_dim]
+#        directions: [num_directions, input_dim]
+#    Returns:
+#        hvps: [batch_size, num_directions, input_dim]
+#    """
+#    hvp_fn = make_hvp_fn(f)
+#
+#    # vmap over inputs (x_i) first, then over directions (v_j)
+#    batched = eqx.filter_vmap(
+#        eqx.filter_vmap(hvp_fn, in_axes=(0, None)),  # x_i
+#        in_axes=(None, 0)                            # v_j
+#    )
+#
+#    # result: [num_directions, batch_size, input_dim]
+#    hvps = batched(inputs, directions)
+#    return jnp.transpose(hvps, (1, 0, 2))  # [batch, directions, input_dim]
 
 
 
@@ -171,16 +198,15 @@ from functools import partial
 
 
 
-# TODO somehow combine the two hvp_batch_ functions to reduce redundancy
 
+
+# HVP for single point and single direction
 def hvp(f, x, v):
-    #jax.debug.print("hvp x: {x}, v: {v}", x=x, v=v)
     return jax.jvp(lambda x_: eqx.filter_grad(f)(x_), (x,), (v,))[1]
 
 # this is a version where we explicitly add a list of boolean values, indicating whether we should compute the hvp for that direction
 # TODO isnt this the same as just setting the undesired directions to 0? Then we could just use the normal hvp_batch function
-def hvp_cond(f, x, v, eval_hvp):                                  #jnp.zeros(shape=(x.shape[-1],))
-    #jax.debug.print("hvp_cond x: {x}, v: {v}", x=x, v=v)
+def hvp_cond(f, x, v, eval_hvp):                                   #jnp.zeros(shape=(x.shape[-1],))
     return jax.lax.cond(eval_hvp, lambda _: hvp(f, x, v), lambda _: jnp.zeros_like(v), None)
 
 
@@ -228,37 +254,6 @@ def hvp_batch_cond(f, inputs, directions, eval_hvp):
 
 
 
-
-#def make_hvp_fn(f):
-#    def hvp_fn(point, direction):
-#        return jax.jvp(lambda x: eqx.filter_grad(f)(x), (point,), (direction,))[1]
-#    return hvp_fn
-#
-#
-#def compute_hvp_batch(f, inputs, directions):
-#    """
-#    Compute Hessian-vector products: H(x_i) @ v_j
-#    Args:
-#        f: scalar-valued function f: R^n -> R
-#        inputs: [batch_size, input_dim]
-#        directions: [num_directions, input_dim]
-#    Returns:
-#        hvps: [batch_size, num_directions, input_dim]
-#    """
-#    hvp_fn = make_hvp_fn(f)
-#
-#    # vmap over inputs (x_i) first, then over directions (v_j)
-#    batched = eqx.filter_vmap(
-#        eqx.filter_vmap(hvp_fn, in_axes=(0, None)),  # x_i
-#        in_axes=(None, 0)                            # v_j
-#    )
-#
-#    # result: [num_directions, batch_size, input_dim]
-#    hvps = batched(inputs, directions)
-#    return jnp.transpose(hvps, (1, 0, 2))  # [batch, directions, input_dim]
-
-
-
 # TODO put cfd stuff this somewhere else, separate file?
 def cfd_fn(f, h, x, *args):
     
@@ -273,6 +268,7 @@ def cfd_fn(f, h, x, *args):
       return fd_of_f
     
     return cfd_
+
 
 
 

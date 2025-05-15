@@ -10,7 +10,7 @@ from jaxtyping import Array, Float
 from functools import partial
 
 import diff_ml as dml
-from diff_ml.hvp_stuff import hvp_batch, hvp_batch_cond, cfd_fn, cfd_cond_fn
+from diff_ml.hvps_and_cfd import hvp_batch, hvp_batch_cond, cfd_fn, cfd_cond_fn
 from diff_ml.model.bachelier import Bachelier
 
 from diff_ml.nn.utils  import LossState
@@ -31,7 +31,7 @@ def rmse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
     return jnp.sqrt(mse(y, pred_y))
 
 
-# TODO understand do we need this?
+# TODO understand why we need this
 class MakeScalar(eqx.Module):
     model: eqx.Module
     def __call__(self, *args, **kwargs):
@@ -102,8 +102,6 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
     #return .0
 
     return pca_directions, eval_hvp, k_pc
-
-
 
 
 
