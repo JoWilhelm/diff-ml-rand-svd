@@ -1,5 +1,5 @@
 # Second-Order Differential Machine Learning
-This project builds on [diff-ml](https://github.com/neilkichler/diff-ml) developed by Neil Kicher as part of his master thesis.
+This project builds on [diff-ml](https://github.com/neilkichler/diff-ml) developed by Neil Kicher as part of his master's thesis.
 For detailed background information, consider looking into:
 
 https://neilkichler.github.io/master-thesis/Thesis.pdf
