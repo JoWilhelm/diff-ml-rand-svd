@@ -338,9 +338,9 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions) 
             ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2)) # (batch_size, n_directions, n_dims)
             #jax.debug.print("ddpayoff[{i}] {v}", i=0, v=ddpayoff[0])
-            all_zeros = [jnp.all(A == 0) for A in ddpayoff]
-            non_zero_count = jnp.sum(jnp.array(all_zeros) == False)
-            jax.debug.print("non_zero_count: {v} / {total}", v=non_zero_count, total=ddpayoff.shape[0])
+            #all_zeros = [jnp.all(A == 0) for A in ddpayoff]
+            #non_zero_count = jnp.sum(jnp.array(all_zeros) == False)
+            #jax.debug.print("non_zero_count: {v} / {total}", v=non_zero_count, total=ddpayoff.shape[0])
 
             ## conditional directions
             #cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
