@@ -169,20 +169,34 @@ class Bachelier:
 
         t_delta = self.t_maturity - self.t_exposure
 
-        # Cholesky
+
+
+        
         diag_v = jnp.diag(vols)
         cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
+        self.key, subkey = jrandom.split(self.key)
+        
+        ### ---- old with cholesky ---- ####
+        # Cholesky
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
-
         # increase vols for simulation of xs so we have more samples in the wings
         chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
-
         # simulations
-        self.key, subkey = jrandom.split(self.key)
         normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
-        
         paths_0 = normal_samples[0] @ chol_0.T
         paths_1 = normal_samples[1] @ chol.T
+
+
+        #### ---- new: sample directly from correlated distribution ---- ####
+        ## TODO find out why this does not work
+        #mean = jnp.zeros(self.n_dims)
+        #cov_0 = cov * self.t_exposure * self.vol_mult**2  # Used for paths_0
+        #cov_1 = cov * t_delta  # Used for paths_1
+        #paths_0 = jrandom.multivariate_normal(subkey, mean, cov_0, shape=(n_samples,))
+        #paths_1 = jrandom.multivariate_normal(subkey, mean, cov_1, shape=(n_samples,))
+
+
+
         spots_1 = spots_0 + paths_0
 
 
