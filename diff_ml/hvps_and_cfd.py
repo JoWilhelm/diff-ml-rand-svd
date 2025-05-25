@@ -227,7 +227,6 @@ def hvp_batch(f, inputs, directions):
     return jnp.transpose(batched(inputs, directions), (1, 0, 2))
 
 
-
 def hvp_batch_cond(f, inputs, directions, eval_hvp):
     """
     Compute Hessian-vector products: H(x_i) @ v_j ifff eval_hvp[j] == True
@@ -248,8 +247,51 @@ def hvp_batch_cond(f, inputs, directions, eval_hvp):
     return jnp.transpose(batched(inputs, directions, eval_hvp), (1, 0, 2))
 
 
+def hvp_per_point(f, inputs, directions):
+    """
+    Compute Hessian-vector products: H(x_i) @ v_j
+    Args:
+        f: scalar-valued function f: R^n -> R
+        inputs: [num_inputs, input_dim]
+        directions: [num_inputs, num_directions, input_dim]
+    Returns:
+        hvps: [num_inputs, num_directions, input_dim]
+    """
+    def hvp_fn(x, vs):
+        return jax.vmap(hvp, in_axes=(None, None, 0))(f, x, vs)  # vmap over directions
+    #batched = eqx.filter_vmap(eqx.filter_vmap(hvp_fn, in_axes=(0, None)), in_axes=(None, 0))
+    return jax.vmap(hvp_fn, in_axes=(0, 0))(inputs, directions)  # vmap over inputs and directions
+    #return jnp.transpose(batched(inputs, directions), (1, 0, 2))
 
 
+
+
+
+
+
+
+
+
+
+
+# TODO refactor this to reuse cfd_fn() ???
+def per_point_cfd(f, h, x, directions, paths1):
+    # x: (B, d), directions: (B, n_dir, dim)
+    x_plus = x[:, None, :] + h * directions
+    x_minus = x[:, None, :] - h * directions # (B, n_dir, dim) # each point shifted in each direction
+
+    x_plus_flat = x_plus.reshape(-1, x.shape[-1]) # flattend to shifted points (B * n_dir, d)
+    x_minus_flat = x_minus.reshape(-1, x.shape[-1])
+    
+    paths1_repeated = jnp.repeat(paths1, repeats=directions.shape[1], axis=0)  # (B * n_dir, d)
+
+    f_plus = f(x_plus_flat, paths1_repeated) # payoff of shifted points
+    f_minus = f(x_minus_flat, paths1_repeated)
+
+    f_plus = f_plus.reshape(x.shape[0], -1, *f_plus.shape[1:]) # restrucutred back to (B, n_dir, dim)
+    f_minus = f_minus.reshape(x.shape[0], -1, *f_minus.shape[1:])
+
+    return (f_plus - f_minus) / (2 * h) # (B * n_dir, dim)
 
 
 
