@@ -130,7 +130,7 @@ def main():
     #)
 
     # Train the surrogate using sobolev loss
-    optim = optax.adam(learning_rate=1e-4)
+    optim = optax.adam(learning_rate=1e-3)
     sobolev_loss_fn = dml.losses.sobolev(dml.losses.mse, method=dml.losses.SobolevLossType.SECOND_ORDER_PCA, ref_model=ref_model)
     surrogate, metrics = dml.train(
         surrogate, sobolev_loss_fn, train_gen, eval_fn, test_ds, optim, n_epochs=n_epochs)

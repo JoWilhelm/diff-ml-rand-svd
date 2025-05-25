@@ -107,7 +107,70 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 
 
 
+def hvp_power_iterated_sketch(f, x, sketch_directions, q):
+    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
+    Y = jnp.mean(Y, axis=0)  # (k, dim)
+    for _ in range(q):
+        
+        # --- Re-orthogonalize directions ---
+        Y, _ = jnp.linalg.qr(Y.T)  # Y.T: (dim, k)
+        Y = Y.T  # shape back to (k, dim)
 
+        
+        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+        Y = jnp.mean(Y, axis=0)  # (k, dim)
+        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+        Y = jnp.mean(Y, axis=0)  # (k, dim)
+
+    return Y
+
+
+
+def get_rand_SVD_directions(f, x, k, key):
+
+    # TODO first rand svd experimental implementation
+    dim = x.shape[-1]
+    sketch_directions = generate_random_vectors(k, dim, key) # (k, dim)
+
+    # Step 1: build sketch Y = H @ sketch_directions
+    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
+    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
+    # TODO understand if averaging over batch_size is the correct approach
+    Y = jnp.mean(Y, axis=0)  # (k, dim)
+    Y = Y.T # (dim, k)
+    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
+
+    ## power iterated version of step 1
+    #Y = hvp_power_iterated_sketch(f=f, x=x, sketch_directions=sketch_directions, q=3) # (k, dim)
+    #Y = Y.T # (dim, k)
+    
+    
+    
+    # Step 2: orthonormalize Y
+    # TODO breaks when k > dim, which I guess makes sense
+    Q, _ = jnp.linalg.qr(Y) # (dim, k)  
+    #jax.debug.print("Q.shape {shape}", shape=Q.shape)
+
+    # Step 3: each row of B is H @ q_i
+    B_rows = hvp_batch(f=f, inputs=x, directions=Q.T) # (batch_size, k, dim)
+    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)  
+    # TODO understand if averaging over batch_size is the correct approach
+    B_rows = jnp.mean(B_rows, axis=0) # (k, dim)
+    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)
+    B = jnp.stack(B_rows, axis=0) # (k, dim)
+    #jax.debug.print("B.shape {shape}", shape=B.shape)
+
+    # Step 4: SVD on B
+    U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
+    #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)
+
+    # Step 5: Lift back U = Q @ U_tilde
+    U = Q @ U_tilde  # (dim, k)
+    #jax.debug.print("U.shape {shape}", shape=U.shape)
+    #jax.debug.print("")
+
+
+    return U.T
 
 
 # TODO separate first order and second order loss functions?
@@ -248,9 +311,9 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             # alternatively use dydx of reference model or difference: dydx_pred - dydx
             pca_directions, eval_hvp, k_pc = PCA_of_dydx_directions(dydx_pred)
     
-        
 
-
+            rand_SVD_directions = get_rand_SVD_directions(MakeScalar(model), x, k=7, key=jax.random.key(42))
+            
 
             #### ---- Second-Order Targets via Finite Differences ---- ####
             
@@ -267,20 +330,23 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             cfd_of_dpayoff_fn = cfd_fn(D_payoff_fn, h, x, paths1) 
             
 
-            
-            directions = pca_directions
+            directions = rand_SVD_directions
+            #directions = pca_directions
             #directions = rand_directions
 
             # all directions 
             ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions) 
-            ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2))
-            #jax.debug.print("ddpayoff[{i}] {v}", i=i, v=ddpayoff[i])
-            
-            # conditional directions
-            cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
-            ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_hvp)
-            ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
-            #jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i]) 
+            ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2)) # (batch_size, n_directions, n_dims)
+            #jax.debug.print("ddpayoff[{i}] {v}", i=0, v=ddpayoff[0])
+            #all_zeros = [jnp.all(A == 0) for A in ddpayoff]
+            #non_zero_count = jnp.sum(jnp.array(all_zeros) == False)
+            #jax.debug.print("non_zero_count: {v} / {total}", v=non_zero_count, total=ddpayoff.shape[0])
+
+            ## conditional directions
+            #cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
+            #ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_hvp)
+            #ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
+            ##jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i]) 
 
 
 
@@ -294,19 +360,20 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             hvps_pred = hvp_batch(f=MakeScalar(model), 
                                          inputs=x, 
                                          directions=directions
-                                         )
+                                         ) # (batch_size, n_directions, n_dims)
+            
             #jax.debug.print("directions.shape {shape}", shape=directions.shape)
             #jax.debug.print("hvps_pred.shape {shape}", shape=hvps_pred.shape)
             #jax.debug.print("hvps_pred[{i}][0] {v}", i=i, v=hvps_pred[i][0])
             #jax.debug.print("")
             # return .0
 
-            # conditional directions
-            hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
-                                         inputs=x, 
-                                         directions=directions,
-                                         eval_hvp=eval_hvp
-                                         )
+            ## conditional directions
+            #hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
+            #                             inputs=x, 
+            #                             directions=directions,
+            #                             eval_hvp=eval_hvp
+            #                             )
             #jax.debug.print("directions.shape {shape}", shape=directions.shape)
             #jax.debug.print("compute_hvp {v}", v=compute_hvp)
             #jax.debug.print("hvps_cond_pred.shape {shape}", shape=hvps_cond_pred.shape)
@@ -321,15 +388,15 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             #### ---- Loss and Loss Balancing ---- ####
 
 
-            #hessian_loss = loss_fn(ddpayoff, hvps_pred)
-            hessian_loss = loss_fn(ddpayoff_cond, hvps_cond_pred)
+            hessian_loss = loss_fn(ddpayoff, hvps_pred)
+            #hessian_loss = loss_fn(ddpayoff_cond, hvps_cond_pred)
 
             
             losses = jnp.array([value_loss, grad_loss, hessian_loss])
             new_loss_state = LossState(losses, prev_loss_state.lambdas, prev_loss_state.initial_losses, prev_loss_state.accum_losses + losses, prev_loss_state.prev_mean_losses, prev_loss_state.current_iter + 1.0)
 
-            #alpha, beta, gamma = loss_balance_even()
-            alpha, beta, gamma, new_loss_state = pca_loss_balance(prev_loss_state, new_loss_state, k_pc, x.shape[-1])
+            alpha, beta, gamma = loss_balance_even()
+            #alpha, beta, gamma, new_loss_state = pca_loss_balance(prev_loss_state, new_loss_state, k_pc, x.shape[-1])
             #jax.debug.print("alpha: {a:.2f}, beta: {b:.2f}, gamma: {c:.2f}", a=alpha, b=beta, c=gamma)
             
             
