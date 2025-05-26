@@ -94,14 +94,14 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
     # select PCs that account for kappa% of variance
     # singular values scaled to represent % of variance explained.
     S_var = S**2 / jnp.sum(S**2)
-    eval_hvp = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
-    k_pc = jnp.sum(eval_hvp) # number of principal components used
+    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
+    k_dir = jnp.sum(eval_dir) # number of principal components used
     
-    #jax.debug.print("eval_hvp {v}", v=eval_hvp)
+    #jax.debug.print("eval_dir {v}", v=eval_dir)
     #jax.debug.print("")
     #return .0
 
-    return pca_directions, eval_hvp, k_pc
+    return pca_directions, eval_dir, k_dir
 
 
 
@@ -126,7 +126,7 @@ def hvp_power_iterated_sketch(f, x, sketch_directions, q):
 
 
 
-def get_rand_SVD_directions(f, x, k, key):
+def get_rand_SVD_directions(f, x, k, key, kappa=0.95, normalize=True):
 
     # TODO first rand svd experimental implementation
     dim = x.shape[-1]
@@ -164,13 +164,19 @@ def get_rand_SVD_directions(f, x, k, key):
     U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
     #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)
 
+
+
     # Step 5: Lift back U = Q @ U_tilde
     U = Q @ U_tilde  # (dim, k)
     #jax.debug.print("U.shape {shape}", shape=U.shape)
     #jax.debug.print("")
 
+    S_var = S**2 / jnp.sum(S**2)
+    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
+    k_dir = jnp.sum(eval_dir) # number of principal components used
+    
 
-    return U.T
+    return U.T, eval_dir, k_dir
 
 
 # TODO separate first order and second order loss functions?
@@ -217,12 +223,12 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             return 1/3, 1/3, 1/3
 
 
-        def pca_loss_balance(prev_loss_state, new_loss_state, k_pc, n_dims):  
+        def pca_loss_balance(prev_loss_state, new_loss_state, k_dir, n_dims):  
             
             lam = 1
             
             # NOTE: An appropriate eta is crucial for a working second-order method
-            eta = (k_pc / n_dims) ** 2
+            eta = (k_dir / n_dims) ** 2
             scale = (1 + lam * n_dims + eta * n_dims * n_dims)
             alpha = 1 / scale
             beta = (lam * n_dims) / scale
@@ -305,14 +311,14 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
 
             # in random directions
-            rand_directions = generate_random_vectors(k=7, dim=x.shape[-1], key=jax.random.key(42))
+            #rand_directions = generate_random_vectors(k=7, dim=x.shape[-1], key=jax.random.key(42))
             
             # apply PCA to first-order gradients dydx_pred
             # alternatively use dydx of reference model or difference: dydx_pred - dydx
-            pca_directions, eval_hvp, k_pc = PCA_of_dydx_directions(dydx_pred)
+            #pca_directions, eval_dir, k_dir = PCA_of_dydx_directions(dydx_pred)
     
 
-            rand_SVD_directions = get_rand_SVD_directions(MakeScalar(model), x, k=7, key=jax.random.key(42))
+            rand_SVD_directions, eval_dir, k_dir = get_rand_SVD_directions(MakeScalar(model), x, k=7, key=jax.random.key(42), kappa=0.95, normalize=True)
             
 
             #### ---- Second-Order Targets via Finite Differences ---- ####
@@ -328,6 +334,9 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             # central finite differences derivative
             h = 1e-1
             cfd_of_dpayoff_fn = cfd_fn(D_payoff_fn, h, x, paths1) 
+
+
+            
             
 
             directions = rand_SVD_directions
@@ -344,7 +353,7 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
             ## conditional directions
             #cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
-            #ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_hvp)
+            #ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_dir)
             #ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
             ##jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i]) 
 
@@ -372,8 +381,9 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             #hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
             #                             inputs=x, 
             #                             directions=directions,
-            #                             eval_hvp=eval_hvp
+            #                             eval_hvp=eval_dir,
             #                             )
+            #
             #jax.debug.print("directions.shape {shape}", shape=directions.shape)
             #jax.debug.print("compute_hvp {v}", v=compute_hvp)
             #jax.debug.print("hvps_cond_pred.shape {shape}", shape=hvps_cond_pred.shape)
@@ -396,7 +406,7 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
             new_loss_state = LossState(losses, prev_loss_state.lambdas, prev_loss_state.initial_losses, prev_loss_state.accum_losses + losses, prev_loss_state.prev_mean_losses, prev_loss_state.current_iter + 1.0)
 
             alpha, beta, gamma = loss_balance_even()
-            #alpha, beta, gamma, new_loss_state = pca_loss_balance(prev_loss_state, new_loss_state, k_pc, x.shape[-1])
+            #alpha, beta, gamma, new_loss_state = pca_loss_balance(prev_loss_state, new_loss_state, k_dir, x.shape[-1])
             #jax.debug.print("alpha: {a:.2f}, beta: {b:.2f}, gamma: {c:.2f}", a=alpha, b=beta, c=gamma)
             
             
