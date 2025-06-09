@@ -289,7 +289,7 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
 
 
-        def sobolev_second_order_loss(model, batch, prev_loss_state, ref_model=ref_model) -> Float[Array, ""]:
+        def sobolev_second_order_loss(model, batch, prev_loss_state, ref_model=ref_model) -> Float[Array, ""]: # TODO clean up return types
 
             # unpack dictionary for readability
             x, y, dydx, paths1 = batch["x"], batch["y"], batch["dydx"], batch["paths1"]

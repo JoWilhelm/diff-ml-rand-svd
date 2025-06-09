@@ -10,6 +10,7 @@ from functools import partial
 # TODO understand this stuff
 # TODO structure better
 
+# TODO move to ad.py
 
 
 #def hmp(f, primals):
