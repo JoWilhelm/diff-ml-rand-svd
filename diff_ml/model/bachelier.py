@@ -210,8 +210,8 @@ class Bachelier:
             payoff_fn = Bachelier.payoff
 
         differentials_analytic = analytic_differentials_fn(spots_1, paths_1, self.weights, self.strike_price)
+        
         payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
-
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
