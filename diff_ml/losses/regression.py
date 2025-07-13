@@ -293,6 +293,12 @@ def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossT
 
             # unpack dictionary for readability
             x, y, dydx, paths1 = batch["x"], batch["y"], batch["dydx"], batch["paths1"]
+            #jax.debug.print("x.shape {shape}", shape=x.shape) 
+            #jax.debug.print("y.shape {shape}", shape=y.shape)
+            #jax.debug.print("dydx.shape {shape}", shape=dydx.shape)
+            # x shape: (batch_size, n_dims)
+            # y shape: (batch_size, )
+            # dydx shape: (batch_size, n_dims)
             
             # get surrogate prediction, first-order derivative and hessian
             y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
