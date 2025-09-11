@@ -9,7 +9,7 @@ from jaxtyping import Array, Float
 
 import diff_ml as dml
 import diff_ml.nn as dnn
-from diff_ml.model import Bachelier
+from diff_ml.reference_models import Bachelier
 from diff_ml.nn import init_model_weights
 from diff_ml.typing import Data
 

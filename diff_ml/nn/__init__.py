@@ -4,7 +4,7 @@ from diff_ml.nn.modules import (
     Normalization,
     Normalized,
 )
-from diff_ml.nn.train import train
+from diff_ml.nn.train_old import train
 from diff_ml.nn.utils import init_model_weights
 
 

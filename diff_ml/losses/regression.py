@@ -1,436 +1,448 @@
-from collections.abc import Callable
-from enum import Enum
 
-import equinox as eqx
 import jax
-import jax.numpy as jnp
 from jax import vmap
+from jax import random as jrandom
+import equinox as eqx
+
+from typing_extensions import TypeAlias
 from jaxtyping import Array, Float
 
-from functools import partial
+Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 
-import diff_ml as dml
-from diff_ml.hvps_and_cfd import hvp_batch, hvp_batch_cond, cfd_fn, cfd_cond_fn
-from diff_ml.model.bachelier import Bachelier
+import jax
+import jax.random as jrandom
 
-from diff_ml.nn.utils  import LossState
-
-
-RegressionLossFn = Callable[..., Float[Array, ""]]
+from utils import mse, rmse, MakeScalar
 
 
-@jax.named_scope("dml.losses.mse")
-def mse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
-    """Mean squared error loss."""
-    return jnp.mean((y - pred_y) ** 2)
-
-
-@jax.named_scope("dml.losses.rmse")
-def rmse(y: Float[Array, " n"], pred_y: Float[Array, " n"]) -> Float[Array, ""]:
-    """Root mean squared error loss."""
-    return jnp.sqrt(mse(y, pred_y))
-
-
-# TODO understand why we need this
-class MakeScalar(eqx.Module):
-    model: eqx.Module
-    def __call__(self, *args, **kwargs):
-        out = self.model(*args, **kwargs)
-        return jnp.reshape(out, ())
-
-
-class SobolevLossType(Enum):
-    """Types of Sobolev loss to use.
-
-    Attributes:
-        ZEROTH_ORDER: Unmodified loss function.
-        FIRST_ORDER: Use first-order derivative information.
-        SECOND_ORDER_HUTCHINSON: Use second-order hessian-vector products sampled in random directions.
-        SECOND_ORDER_PCA: Use second-order hessian-vector products sampled in PCA directions.
-    """
-
-    ZEROTH_ORDER = 0
-    FIRST_ORDER = 1
-    SECOND_ORDER_HUTCHINSON = 2
-    SECOND_ORDER_PCA = 3
+#print(jax.devices())
 
 
 
 
+def standard_loss_fn(model, batch):
+    x = batch[0]
+    y = batch[1]
+    y_pred = vmap(model)(x)
+    return mse(y, y_pred)
 
 
 
-def normalize_vectors(vectors):
-    return vectors / jnp.linalg.norm(vectors, axis=1, keepdims=True)
+def first_order_loss_fn(model, batch):
+    
+    x, y, dydx, additional_args = batch
 
-def generate_random_vectors(k, dim, key, normalize=True):
-    key, subkey = jax.random.split(key)
-    vectors = jax.random.normal(subkey, shape=(k, dim))
-    if normalize:
-        vectors = normalize_vectors(vectors)
-    return vectors
+    y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
+    assert(y_pred.shape == y.shape)
+    assert(dydx_pred.shape == dydx.shape)
+
+    value_loss = mse(y_pred, y)
+    grad_loss = mse(dydx_pred, dydx)
+
+    loss = 0.5*value_loss + 0.5*grad_loss
+    return loss
+    
 
 
+@eqx.filter_jit
+def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_per_x, Svals, variant, k) -> Float:
+    
+    if not variant in ["random", "batchSVD", "perXSVD", "streaming", "fullHessian"]:
+        raise ValueError("variant must be either random, batchSVD, perXSVD, streaming or fullHessian")
 
-# apply PCA to first-order gradients of predictions
-def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
+    iteration_data = {}
+
+    #x = batch[0]
+    #y = batch[1]
+    #dydx = batch[2]
+    x, y, dydx, additional_args = batch
+    b = x.shape[0]
+    
+
+    y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
+    assert(y_pred.shape == y.shape)
+    assert(dydx_pred.shape == dydx.shape)
+
+    #value_loss = mse(y_pred, y)
+    #grad_loss = mse(dydx_pred, dydx)    
     
     
-    dydx_means = jnp.mean(dydx, axis=0)
-    tiled_dydx_used_means = jnp.tile(dydx_means, (dydx.shape[0], 1))
-    dydx_used_mean_adjusted = dydx - tiled_dydx_used_means
-    U, S, VT = jnp.linalg.svd(dydx_used_mean_adjusted, full_matrices=False)
-    principal_components = jnp.diag(S) @ VT
-    pca_directions = principal_components.T
-    #jax.debug.print("principal_components.shape {shape}", shape=principal_components.shape)
-    #jax.debug.print("principal_components[0] {pc0}", pc0=principal_components[0])
-    #jax.debug.print("")
-    #return .0
-
-    if normalize:
-        pca_directions = normalize_vectors(pca_directions)
+    k = min(k, ref_model.n_dims)  # ensure k does not exceed the number of dimensions
 
 
-    # select PCs that account for kappa% of variance
-    # singular values scaled to represent % of variance explained.
-    S_var = S**2 / jnp.sum(S**2)
-    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
-    k_dir = jnp.sum(eval_dir) # number of principal components used
     
-    #jax.debug.print("eval_dir {v}", v=eval_dir)
-    #jax.debug.print("")
-    #return .0
 
-    return pca_directions, eval_dir, k_dir
+    ref_fn = ref_model.reference_fn(additional_args)
+
+    
+    
+            
+
+    x_raw = x
+    
 
 
+    
+
+    ## random directions
+    if variant == "random":
+        key, subkey = jrandom.split(key)
+        rand_directions = generate_random_vectors((k, *ref_model.un_flattened_shape), key=key, normalize=True)
 
 
+    # randSVD directions
+    # TODO calculate this once before?
 
-def hvp_power_iterated_sketch(f, x, sketch_directions, q):
-    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
-    Y = jnp.mean(Y, axis=0)  # (k, dim)
-    for _ in range(q):
+    if variant == "batchSVD": 
+        rand_svd_directions_ref, eval_dir, k_dir, Svals = get_rand_SVD_directions(
+                                        ref_model=ref_model,
+                                        f=ref_fn,
+                                        x=x_raw,
+                                        k=k,
+                                        key=key,
+                                        is_ref_fn=True
+                                        )
         
-        # --- Re-orthogonalize directions ---
-        Y, _ = jnp.linalg.qr(Y.T)  # Y.T: (dim, k)
-        Y = Y.T  # shape back to (k, dim)
+    if variant == "perXSVD":
+        U_batch, eval_dir_batch, k_dir_batch, Svals = get_rand_SVD_directions_per_x(
+                                        ref_model=ref_model,
+                                        f=ref_fn,
+                                        X=x_raw,
+                                        k=k, 
+                                        key=key,
+                                        is_ref_fn=True
+                                        )
+    
+    #rand_svd_directions_model, eval_dir, k_dir, S_var_model = get_rand_SVD_directions(
+    #                                f=MakeScalar(model),  
+    #                                x=x,
+    #                                k=k,
+    #                                key=key,
+    #                                is_ref_fn=False
+    #                                )
+    
+    # TODO the stacking logic seems wrong
+    #stacked = jnp.stack([rand_svd_directions_ref, rand_svd_directions_model], axis=2)        
+    #interleaved_rand_svd_dirs = stacked.reshape((2*len(rand_svd_directions_ref), *ref_model.un_flattened_shape))
+    #combined = jnp.concatenate([rand_svd_directions_ref, rand_svd_directions_model], axis=0)
 
+    
+    if variant == "perXSVD":
+        dirs_per_x = U_batch
         
-        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
-        Y = jnp.mean(Y, axis=0)  # (k, dim)
-        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
-        Y = jnp.mean(Y, axis=0)  # (k, dim)
-
-    return Y
-
-
-
-def get_rand_SVD_directions(f, x, k, key, kappa=0.95, normalize=True):
-
-    # TODO first rand svd experimental implementation
-    dim = x.shape[-1]
-    sketch_directions = generate_random_vectors(k, dim, key) # (k, dim)
-
-    # Step 1: build sketch Y = H @ sketch_directions
-    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
-    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
-    # TODO understand if averaging over batch_size is the correct approach
-    Y = jnp.mean(Y, axis=0)  # (k, dim)
-    Y = Y.T # (dim, k)
-    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
-
-    ## power iterated version of step 1
-    #Y = hvp_power_iterated_sketch(f=f, x=x, sketch_directions=sketch_directions, q=3) # (k, dim)
-    #Y = Y.T # (dim, k)
-    
-    
-    
-    # Step 2: orthonormalize Y
-    # TODO breaks when k > dim, which I guess makes sense
-    Q, _ = jnp.linalg.qr(Y) # (dim, k)  
-    #jax.debug.print("Q.shape {shape}", shape=Q.shape)
-
-    # Step 3: each row of B is H @ q_i
-    B_rows = hvp_batch(f=f, inputs=x, directions=Q.T) # (batch_size, k, dim)
-    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)  
-    # TODO understand if averaging over batch_size is the correct approach
-    B_rows = jnp.mean(B_rows, axis=0) # (k, dim)
-    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)
-    B = jnp.stack(B_rows, axis=0) # (k, dim)
-    #jax.debug.print("B.shape {shape}", shape=B.shape)
-
-    # Step 4: SVD on B
-    U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
-    #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)
-
-
-
-    # Step 5: Lift back U = Q @ U_tilde
-    U = Q @ U_tilde  # (dim, k)
-    #jax.debug.print("U.shape {shape}", shape=U.shape)
-    #jax.debug.print("")
-
-    S_var = S**2 / jnp.sum(S**2)
-    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
-    k_dir = jnp.sum(eval_dir) # number of principal components used
-    
-
-    return U.T, eval_dir, k_dir
-
-
-# TODO separate first order and second order loss functions?
-@jax.named_scope("dml.losses.sobolev")
-def sobolev(loss_fn: RegressionLossFn, *, method: SobolevLossType = SobolevLossType.FIRST_ORDER, ref_model) -> RegressionLossFn:
-    sobolev_loss_fn = loss_fn
-
-    if method == SobolevLossType.FIRST_ORDER:
-
-        def loss_balance(n_dims: int, weighting: float = 1.0) -> tuple[float, float]:
-            lambda_scale = weighting * n_dims
-            n_elements = 1.0 + lambda_scale
-            alpha = 1.0 / n_elements
-            beta = lambda_scale / n_elements
-            return alpha, beta
-
-        def sobolev_first_order_loss(model, batch) -> Float[Array, ""]:
-            x, y, dydx = batch["x"], batch["y"], batch["dydx"]
-            y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(model))(x)
-
-            assert y.shape == y_pred.shape
-            assert dydx.shape == dydx_pred.shape
-
-            value_loss = loss_fn(y, y_pred)
-            grad_loss = loss_fn(dydx, dydx_pred)
-
-            n_dims = x.shape[-1]
-            alpha, beta = loss_balance(n_dims)
-
-            return alpha * value_loss + beta * grad_loss
-
-        sobolev_loss_fn = sobolev_first_order_loss
-    elif method == SobolevLossType.SECOND_ORDER_HUTCHINSON:
-        raise NotImplementedError
-    
-
-
-    elif method == SobolevLossType.SECOND_ORDER_PCA:
+    if variant == "perXSVD" or variant == "streaming":
+        dirs_per_x_unflat = dirs_per_x.reshape(b, k, *ref_model.un_flattened_shape)
+        dirs_per_x_flat = dirs_per_x.reshape(b, k, ref_model.n_dims)
+        dirs_per_x_scaled_flat = dirs_per_x_flat
+        
         
 
-
-        def loss_balance_even() -> tuple[float, float, float]:
-
-            return 1/3, 1/3, 1/3
-
-
-        def pca_loss_balance(prev_loss_state, new_loss_state, k_dir, n_dims):  
-            
-            lam = 1
-            
-            # NOTE: An appropriate eta is crucial for a working second-order method
-            eta = (k_dir / n_dims) ** 2
-            scale = (1 + lam * n_dims + eta * n_dims * n_dims)
-            alpha = 1 / scale
-            beta = (lam * n_dims) / scale
-            gamma = 1.0 - alpha - beta
+        
+        ##jax.debug.print("dirs.shape {shape}", shape=directions.shape)
+        #
+        # targets
+        target_hvps = hvp_batch_per_input(
+            f=ref_fn,
+            inputs=x_raw, 
+            directions=dirs_per_x_scaled_flat
+        )
+        #jax.debug.print("targets.shape {shape}", shape=target_hvps.shape)
 
 
-           
-            use_balance = True
-            if use_balance:
-                # TODO: The loss weights should be based on the previous _weighted_ losses. The losses themselves don't 
-                #       have to be balanced, only after the weighting there should be balance.
-                #
-                #       Maybe combine: - prev. weighted loss
-                #                      - diff between current and prev loss
-                #                      - maybe prev. lambdas?
-                #  to predict the lambdas needed to make all the _weighted_ losses of the current step equal.
+        # predictions
+        pred_hvps = hvp_batch_per_input(
+            f=MakeScalar(model),
+            inputs=x, 
+            directions=dirs_per_x_flat
+        )
+        #jax.debug.print("preds.shape {shape}", shape=pred_hvps.shape)
 
 
-                # loss_weights = current_mean_losses / jnp.sum(current_mean_losses)
-                # jax.debug.print("[{}] loss_weights: {}", current_iter, loss_weights)
-
-
-                n_steps = 16.0
-                is_last_step = new_loss_state.current_iter[0] == n_steps
-
-
-                # NOTE: raw weighting s.t. the losses are equal does not work as it neglects larger losses in favor of smaller losses
-                loss_weights = new_loss_state.losses / jnp.sum(new_loss_state.losses)
-                loss_balance = 1/3 / loss_weights
-                weighted_loss = jnp.multiply(loss_balance, new_loss_state.losses)
-                weighting = loss_balance / jnp.sum(loss_balance)
-                balancing = jnp.ones(len(new_loss_state.losses)) - loss_weights
-                softmax_balancing = jax.nn.softmax(balancing)
-
-                updated_balance_weight = 10
-                softmax_balancing = updated_balance_weight * softmax_balancing
-                # lambdas = jnp.array([alpha, beta, gamma])
-                # lambdas_new_weights = jax.nn.softmax(lambdas + softmax_balancing)
-                # jax.debug.print("lambdas new weights: {}", lambdas_new_weights)
-                # alpha, beta, gamma = lambdas_new_weights
-
-                new_lambdas = jax.nn.softmax(jnp.multiply(softmax_balancing, new_loss_state.lambdas)) * is_last_step + (1.0 - is_last_step) * new_loss_state.lambdas
-                new_loss_state = new_loss_state.update_lambdas(new_lambdas)
-                #alpha, beta, gamma = new_lambdas
-
-                alpha, beta, gamma = weighting
-
-
-            return alpha, beta, gamma, new_loss_state
-
-
-
-
-
-
-
-
-
-
-
-        def sobolev_second_order_loss(model, batch, prev_loss_state, ref_model=ref_model) -> Float[Array, ""]:
-
-            # unpack dictionary for readability
-            x, y, dydx, paths1 = batch["x"], batch["y"], batch["dydx"], batch["paths1"]
-            #jax.debug.print("x.shape {shape}", shape=x.shape) 
-            #jax.debug.print("y.shape {shape}", shape=y.shape)
-            #jax.debug.print("dydx.shape {shape}", shape=dydx.shape)
-            # x shape: (batch_size, n_dims)
-            # y shape: (batch_size, )
-            # dydx shape: (batch_size, n_dims)
-            
-            # get surrogate prediction, first-order derivative and hessian
-            y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
-            assert y.shape == y_pred.shape
-            assert dydx.shape == dydx_pred.shape
-
-            # loss and first-order differntial loss
-            value_loss = loss_fn(y, y_pred)
-            grad_loss = loss_fn(dydx, dydx_pred)
-
-
-
-
-            
-            #### ---- Get Directions for Hessian Probing ---- ####
-
-
-            # in random directions
-            #rand_directions = generate_random_vectors(k=7, dim=x.shape[-1], key=jax.random.key(42))
-            
-            # apply PCA to first-order gradients dydx_pred
-            # alternatively use dydx of reference model or difference: dydx_pred - dydx
-            #pca_directions, eval_dir, k_dir = PCA_of_dydx_directions(dydx_pred)
     
-
-            rand_SVD_directions, eval_dir, k_dir = get_rand_SVD_directions(MakeScalar(model), x, k=7, key=jax.random.key(42), kappa=0.95, normalize=True)
-            
-
-            #### ---- Second-Order Targets via Finite Differences ---- ####
-            
-
-            payoff_fn = partial(ref_model.antithetic_payoff, # TODO make loss function independent of Bachelier, pass payoff_fn
-                                weights=ref_model.weights,
-                                strike_price=ref_model.strike_price
-                                )
-            D_payoff_fn = jax.vmap(jax.grad(payoff_fn)) 
-            
-
-            # central finite differences derivative
-            h = 1e-1
-            cfd_of_dpayoff_fn = cfd_fn(D_payoff_fn, h, x, paths1) 
-
-
-            
-            
-
-            directions = rand_SVD_directions
-            #directions = pca_directions
+    if variant == "batchSVD" or variant == "random":
+        if variant == "random":
+            directions = rand_directions
+        if variant == "batchSVD":
+            directions = rand_svd_directions_ref
+            #directions = dirs
             #directions = rand_directions
+            #directions = rand_svd_directions_model
+            #directions = interleaved_rand_svd_dirs
+            #directions = combined
 
-            # all directions 
-            ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions) 
-            ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2)) # (batch_size, n_directions, n_dims)
-            #jax.debug.print("ddpayoff[{i}] {v}", i=0, v=ddpayoff[0])
-            #all_zeros = [jnp.all(A == 0) for A in ddpayoff]
-            #non_zero_count = jnp.sum(jnp.array(all_zeros) == False)
-            #jax.debug.print("non_zero_count: {v} / {total}", v=non_zero_count, total=ddpayoff.shape[0])
+        k = directions.shape[0]
 
-            ## conditional directions
-            #cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
-            #ddpayoff_cond = cfd_of_dpayoff_cond_fn(directions, eval_dir)
-            #ddpayoff_cond = jnp.transpose(ddpayoff_cond, (1, 0, 2))
-            ##jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i]) 
+        #dirs_raw_unflat = directions                         
+        #dirs_norm_unflat = dirs_raw_unflat / ref_model.x_std 
+        #
+        #dirs_raw_flat  = dirs_raw_unflat.reshape(k, ref_model.n_dims)
+        #dirs_norm_flat = dirs_norm_unflat.reshape(k, ref_model.n_dims)
+
+        # scaling directions to account for normalization
+        dirs_flat = directions.reshape(k, ref_model.n_dims)
+        dirs_scaled_flat = dirs_flat
+        
+
+        ###### ---- Second-Order Targets via CFD ---- ####
+        ## prepare cfd fn
+        #payoff_fn = partial(ref_model.antithetic_payoff, # TODO make loss function independent of Bachelier, pass payoff_fn
+        #                    weights=ref_model.weights,
+        #                    strike_price=ref_model.strike_price
+        #                    )
+        #D_payoff_fn = jax.vmap(jax.grad(payoff_fn)) 
+        #h = 1e-1
+        #paths1 = additional_args
+        #cfd_of_dpayoff_fn = cfd_fn(D_payoff_fn, h, x, paths1) 
+        #
+        #
+        #ddpayoff = jax.vmap(cfd_of_dpayoff_fn)(directions) 
+        #ddpayoff = jnp.transpose(ddpayoff, (1, 0, 2)) # (batch_size, n_directions, n_dims)
+        #target_hvps = ddpayoff
 
 
 
+        #### ---- Second-Order Targets via HVPs ---- ####
 
-
-
-            #### ---- Second-Order Predicitons via HVPs ---- ####
-
-
-            # all directions
-            hvps_pred = hvp_batch(f=MakeScalar(model), 
-                                         inputs=x, 
-                                         directions=directions
-                                         ) # (batch_size, n_directions, n_dims)
-            
-            #jax.debug.print("directions.shape {shape}", shape=directions.shape)
-            #jax.debug.print("hvps_pred.shape {shape}", shape=hvps_pred.shape)
-            #jax.debug.print("hvps_pred[{i}][0] {v}", i=i, v=hvps_pred[i][0])
-            #jax.debug.print("")
-            # return .0
-
-            ## conditional directions
-            #hvps_cond_pred = hvp_batch_cond(f=MakeScalar(model), 
-            #                             inputs=x, 
-            #                             directions=directions,
-            #                             eval_hvp=eval_dir,
-            #                             )
-            #
-            #jax.debug.print("directions.shape {shape}", shape=directions.shape)
-            #jax.debug.print("compute_hvp {v}", v=compute_hvp)
-            #jax.debug.print("hvps_cond_pred.shape {shape}", shape=hvps_cond_pred.shape)
-            #jax.debug.print("hvps_cond_pred[{i}][0] {v}", i=i, v=hvps_cond_pred[i][0])
-            #jax.debug.print("")
-            #return .0
+        #jax.debug.print("dirs_scaled_flat.shape {shape}", shape=dirs_scaled_flat.shape)
+        #jax.debug.print("x_raw.shape {shape}", shape=x_raw.shape)
+        #return .0
 
 
 
 
-
-            #### ---- Loss and Loss Balancing ---- ####
-
-
-            hessian_loss = loss_fn(ddpayoff, hvps_pred)
-            #hessian_loss = loss_fn(ddpayoff_cond, hvps_cond_pred)
-
-            
-            losses = jnp.array([value_loss, grad_loss, hessian_loss])
-            new_loss_state = LossState(losses, prev_loss_state.lambdas, prev_loss_state.initial_losses, prev_loss_state.accum_losses + losses, prev_loss_state.prev_mean_losses, prev_loss_state.current_iter + 1.0)
-
-            alpha, beta, gamma = loss_balance_even()
-            #alpha, beta, gamma, new_loss_state = pca_loss_balance(prev_loss_state, new_loss_state, k_dir, x.shape[-1])
-            #jax.debug.print("alpha: {a:.2f}, beta: {b:.2f}, gamma: {c:.2f}", a=alpha, b=beta, c=gamma)
-            
-            
-            loss = alpha * value_loss + beta * grad_loss + gamma * hessian_loss
-            
-            return (loss, new_loss_state)
-            # TODO also return alpha, beta, gamma for plotting over epochs?
+        # all directions
+        target_hvps = hvp_batch(
+            f=ref_fn,
+            inputs=x_raw, 
+            directions=dirs_scaled_flat
+        )
 
     
 
-        sobolev_loss_fn = sobolev_second_order_loss
+        ## conditional directions
+        #target_hvps = hvp_batch_cond(f=ref_model.closed_form_basket_price_x, 
+        #                                inputs=x_raw_flat, 
+        #                                directions=dirs_scaled_flat,
+        #                                eval_hvp=eval_dir,
+        #                                )
 
-    return sobolev_loss_fn
+        ## CFD
+        #D_payoff_fn = jax.vmap(jax.grad(ref_model.closed_form_basket_price_x))
+        ## central finite differences derivative
+        #h = 1e-1
+        #cfd_of_dpayoff_fn = cfd_fn(D_payoff_fn, h, x_raw_flat) 
+        ## conditional directions
+        #cfd_of_dpayoff_cond_fn = cfd_cond_fn(cfd_of_dpayoff_fn, batch_size=x.shape[0]) # TODO get rid of the explicit batch size dependency
+        #ddpayoff_cond = cfd_of_dpayoff_cond_fn(dirs_scaled_flat, eval_dir)
+        #target_hvps = jnp.transpose(ddpayoff_cond, (1, 0, 2))
+        ##jax.debug.print("ddpayoff_cond[{i}] {v}", i=i, v=ddpayoff_cond[i]) 
+
+
+
+
+    
+
+
+        #### ---- Second-Order Predicitons via HVPs ---- ####
+
+        # all directions
+        pred_hvps = hvp_batch(
+            f=MakeScalar(model),
+            inputs=x, 
+            directions=dirs_flat
+        )
+
+        ## conditional directions
+        #pred_hvps = hvp_batch_cond(f=MakeScalar(model), 
+        #                                inputs=x, 
+        #                                directions=directions.reshape(k, 2*basket_dim),
+        #                                eval_hvp=eval_dir,
+        #                                )
+        
+
+    # (batch_size, k, basket_dim*2)
+    #print("pred_hvps shape:", pred_hvps.shape)
+
+    #print("target nans:", jnp.isnan(target_hvps).sum())
+    #print("pred nans:", jnp.isnan(target_hvps).sum())
+
+
+   
+    if variant == "fullHessian":
+        ## Ture Hessians vis jax.hessian for testing
+        model_ddyddx = vmap(jax.hessian(MakeScalar(model)))(x)
+        #model_ddyddx_diag = jnp.stack([model_ddyddx[:,i,: ,i,:] for i in range(basket_dim)], axis=1)
+        true_ddyddx = vmap(jax.hessian(ref_fn))(x_raw)
+        
+        #true_ddyddx_diag = jnp.stack([true_ddyddx[:,i,: ,i,:] for i in range(basket_dim)], axis=1)
+        #print("target nans:", jnp.isnan(true_ddyddx).sum())
+        #print("pred nans:", jnp.isnan(model_ddyddx).sum())
+        target_hvps = true_ddyddx
+        pred_hvps = model_ddyddx
+
+        #jax.debug.print("true_ddyddx shape {shape}", shape=true_ddyddx.shape)
+        #jax.debug.print("pred_ddyddx shape {shape}", shape=model_ddyddx.shape)
 
 
 
 
 
+    assert(target_hvps.shape == pred_hvps.shape)
+    
+
+
+    #print("ddyddx_pred shape: ", ddyddx_pred.shape)
+    #print("")
+    #return .0
+
+    
+
+    #curv = jnp.linalg.norm(target_hvps, axis=-1)              # (B,k)
+    #jax.debug.print("mean dir-1st-deriv: {}", curv.mean())
+    #jax.debug.print("median dir-2nd-deriv: {}", jnp.median(curv))
+
+
+    hess_loss = mse(pred_hvps, target_hvps) 
+    #hess_loss = cosine_loss(pred_hvps, target_hvps)
+    
+    ## WSE
+    #if not variant == "random":
+    #    hess_loss = wse(pred_hvps, target_hvps, Svals)
+    #else:
+    #    hess_loss = mse(pred_hvps, target_hvps)
+
+    
+
+    #jax.debug.print("value loss: {}", value_loss)
+    #jax.debug.print("grad loss: {}", grad_loss)
+    #jax.debug.print("hess loss: {}", hess_loss)
+    #jax.debug.print("---------------------------------")
+
+
+
+
+    if variant == "fullHessian":
+        return hess_loss, iteration_data
+
+
+
+    
+    #iteration_data["directions model"] = rand_svd_directions_model
+    #iteration_data["directions ref"] = rand_svd_directions_ref
+    
+    #iteration_data["S_var model"] = S_var_model
+    #iteration_data["S_var ref"] = S_var_ref
+    
+    
+    
+    if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
+        iteration_data["directions"] = dirs_flat
+    
+    if variant == "perXSVD" or variant == "streaming":
+        iteration_data["directions"] = dirs_per_x_flat
+
+    
+    # TODO move this out of 2nd order loss function
+    
+    #x_raw_flat = x_raw.reshape(x.shape[0], ref_model.n_dims)
+    #
+    #if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
+    #    iteration_data["directions"] = dirs_flat
+    #    approx_dirs = dirs_scaled_flat
+    #    if variant == "random":
+    #        approx_dirs = rand_directions.reshape(-1, ref_model.n_dims)
+    #    approximation_metrics_ref = approx_metrics(
+    #                                               #fn=MakeScalar(model),
+    #                                               fn=ref_fn,
+    #                                               ref_model=ref_model,
+    #                                               #x=x,
+    #                                               x=x_raw_flat, 
+    #                                               U_dirs=approx_dirs
+    #                                               )
+    #if variant == "perXSVD" or variant == "streaming":
+    #    iteration_data["directions"] = dirs_per_x_flat
+    #    approx_dirs_per_x = dirs_per_x_scaled_flat
+    #    if variant == "random":
+    #        approx_dirs_per_x = rand_directions.reshape(-1, ref_model.n_dims)
+    #    approximation_metrics_ref = approx_metrics_per_x(
+    #                                               #fn=MakeScalar(model),
+    #                                               fn=ref_fn,
+    #                                               ref_model=ref_model,
+    #                                               #x=x,
+    #                                               x=x_raw_flat, 
+    #                                               dirs_per_x=approx_dirs_per_x
+    #                                               )
+    #
+    #
+    #iteration_data["approximation metrics ref"] = approximation_metrics_ref
+
+
+    return hess_loss, iteration_data
+
+
+
+
+
+
+
+
+
+
+@eqx.filter_jit
+def third_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, U_H, k) -> Float:
+    
+    
+    x, y, dydx, additional_args = batch
+    
+
+    
+    k = min(k, ref_model.n_dims)  # ensure k does not exceed the number of dimensions
+
+
+    
+    ref_fn = ref_model.reference_fn(additional_args)
+
+    
+    
+    x_raw = x
+
+    dirs_scaled_flat = U_H
+    
+
+
+    # get direction pairs
+    dirs_v, dirs_w = get_3rd_rand_SVD_directions(
+                                    ref_model=ref_model,
+                                    f=ref_fn,
+                                    x=x_raw,
+                                    U_H=dirs_scaled_flat,
+                                    k=k, 
+                                    key=key
+                                    )
+
+    # tvps targets
+    target_tvps = tvp_batch(
+        f=ref_fn,
+        inputs=x_raw, 
+        v_dirs=dirs_v,
+        w_dirs=dirs_w
+    )
+
+    # tvp predictions
+    # all directions
+    pred_tvps = tvp_batch(
+        f=MakeScalar(model),
+        inputs=x, 
+        v_dirs=dirs_v,
+        w_dirs=dirs_w
+    )
+
+
+    # tloss
+    t3_loss = mse(pred_tvps, target_tvps)
+        
+
+    return t3_loss
 
 
 

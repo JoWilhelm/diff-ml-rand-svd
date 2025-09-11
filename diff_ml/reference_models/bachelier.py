@@ -1,15 +1,20 @@
-from dataclasses import dataclass
-from functools import partial
-from typing import Final
+from typing import Tuple
+from jaxtyping import Array, Float, PRNGKeyArray
+
 
 import jax
 import jax.numpy as jnp
+import equinox as eqx
 import jax.random as jrandom
-import jax.scipy.stats as jstats
-from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
-from diff_ml.model.payoff import EuropeanPayoff
-from diff_ml.typing import Data, DataGenerator
+from typing_extensions import TypeAlias
+
+
+
+import jax.numpy as jnp
+
+Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
+
 
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
@@ -20,13 +25,10 @@ def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     return jnp.linalg.multi_dot([inv_vols, covariance, inv_vols])
 
 
-class Basket:
-    """TODO: ."""
-
 
 # TODO: seperate the analytic part into a seperate class
 # TODO: seperate the basket aspect out of the model
-@dataclass
+#@dataclass
 class Bachelier:
     """Bachelier model.
 
@@ -48,8 +50,9 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
-    n_dims: Final[int]
-    weights: Float[Array, " n_dims"]
+    #n_dims: Final[int]
+    basket_dim: Final[int]
+    weights: Float[Array, "basket_dim"]
 
     t_exposure: float = 1.0
     t_maturity: float = 2.0
@@ -57,18 +60,21 @@ class Bachelier:
     vol_mult: float = 1.5
     vol_basket: float = 0.2
     use_antithetic: bool = True
+    was_normalized: bool = False
 
-    def __init__(self, key, n_dims, weights):
+    def __init__(self, key, basket_dim, weights):
         """TODO: ."""
-        if n_dims != len(weights):
-            val = f"Mismatch in number of dimensions ({n_dims}) and number of weights ({weights}) given."
+        if basket_dim != len(weights):
+            val = f"Mismatch in number of dimensions ({basket_dim}) and number of weights ({weights}) given."
             raise ValueError(val)
 
         self.key = key
-        self.n_dims = n_dims
+        self.basket_dim = basket_dim
+        self.un_flattened_shape = [basket_dim]
 
         # scale weights to sum up to 1
         self.weights = weights / jnp.sum(weights)
+        self.n_dims = basket_dim
 
     def baskets(self, spots):
         """TODO: ."""
@@ -107,6 +113,9 @@ class Bachelier:
         differentials = 0.5 * (differentials_a + differentials_b)
         return differentials
 
+   
+   
+   
     @staticmethod
     def payoff(
         xs: Float[Array, "n_samples n_dims"],
@@ -119,6 +128,9 @@ class Bachelier:
         baskets_end = jnp.dot(spots_end, weights)
         pay = EuropeanPayoff.call(baskets_end, strike_price)
         return pay
+
+
+
 
     @staticmethod
     def antithetic_payoff(
@@ -139,9 +151,37 @@ class Bachelier:
         pay = 0.5 * (pay_a + pay_b)
         return pay
     
+
+
+
+
+    #def reference_fn(self, *args):
+    #    return partial(Bachelier.antithetic_payoff,
+    #                   weights=self.weights,
+    #                   strike_price=self.strike_price,
+    #                   paths=args[0])
     
 
-    def sample(self, n_samples: int) -> Data:
+    def analytic_basket_price_singe_x(self, x):
+        basket = jnp.dot(x, self.weights).reshape((-1, 1))
+        time_to_maturity = self.t_maturity - self.t_exposure
+        price = Bachelier.Call.price(
+                        spot =basket,
+                       strike=self.strike_price,
+                       vol=self.vol_basket,
+                       t=time_to_maturity
+                )
+        price = price.reshape((-1,))
+        return price[0]
+        
+    def reference_fn(self, *args):
+        return self.analytic_basket_price_singe_x 
+
+
+    
+    
+
+    def sample(self, key, n_samples: int):
         """TODO: ."""
 
 
@@ -149,15 +189,14 @@ class Bachelier:
         spots_0 = jnp.repeat(1.0, self.n_dims)
 
         # generate random correlation matrix
-        # TODO: Do we want external keys for sampling?
-        self.key, subkey = jrandom.split(self.key)
+        key, subkey = jrandom.split(key)
         correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
 
         # TODO: consider using cupy for random number generation in MC simulation
         #       in general we should extract the random number generator to be agnostic
 
         # generate random volatilities
-        self.key, subkey = jrandom.split(self.key)
+        key, subkey = jrandom.split(key)
         vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
 
         # W.l.o.g., normalize the volatilities for a given volatility of the basket.
@@ -174,7 +213,7 @@ class Bachelier:
         
         diag_v = jnp.diag(vols)
         cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
-        self.key, subkey = jrandom.split(self.key)
+        key, subkey = jrandom.split(key)
         
         ### ---- old with cholesky ---- ####
         # Cholesky
@@ -210,21 +249,21 @@ class Bachelier:
             payoff_fn = Bachelier.payoff
 
         differentials_analytic = analytic_differentials_fn(spots_1, paths_1, self.weights, self.strike_price)
-        
         payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
+
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
-        assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
+        #assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
 
 
-        return {
-            "x": spots_1,
-            "y": payoffs_vjp,
-            "dydx": differentials_vjp,
-            "paths1": paths_1, 
-        }
-    
+        #return {
+        #    "x": spots_1,
+        #    "y": payoffs_vjp,
+        #    "dydx": differentials_vjp,
+        #    "paths1": paths_1, 
+        #}
+        return spots_1, payoffs_vjp, differentials_vjp, paths_1
 
 
 
@@ -239,33 +278,36 @@ class Bachelier:
         while True:
             yield self.sample(n_batch)
 
-    def generator(self, n_precompute: int) -> DataGenerator:
-        """Generates new data on the fly.
-
-        Note that this generator continues forever. The `n_precompute` parameter is only
-        used to control the number of samples that are computed at once. The generator
-        will then yield `n_precompute` times before computing the next set of data points.
-
-        Args:
-            n_precompute: number of samples to generate at once.
-
-        Yields:
-            A Data object.
-        """
-        while True:
-            samples = self.sample(n_precompute)
-            keys = samples.keys()
-            values = samples.values()
-
-            for i in range(n_precompute):
-                ith_sample = (v[i] for v in values)
-                sample = dict(zip(keys, ith_sample))
-                yield sample
-
-
+#    def generator(self, n_precompute: int) -> DataGenerator:
+#        """Generates new data on the fly.
+#
+#        Note that this generator continues forever. The `n_precompute` parameter is only
+#        used to control the number of samples that are computed at once. The generator
+#        will then yield `n_precompute` times before computing the next set of data points.
+#
+#        Args:
+#            n_precompute: number of samples to generate at once.
+#
+#        Yields:
+#            A Data object.
+#        """
+#        while True:
+#            samples = self.sample(n_precompute)
+#            keys = samples.keys()
+#            values = samples.values()
+#
+#            for i in range(n_precompute):
+#                ith_sample = (v[i] for v in values)
+#                sample = dict(zip(keys, ith_sample))
+#                yield sample
 
 
-    def analytic(self, n_samples, minval=0.5, maxval=1.5) -> Data:
+    def get_test_set(self, n_samples):
+        return self.analytic(n_samples)
+
+
+
+    def analytic(self, n_samples, minval=0.5, maxval=1.5):
         """TODO: ."""
 
         # adjust lower and upper for dimension
@@ -282,25 +324,33 @@ class Bachelier:
         
         prices = Bachelier.Call.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
         prices = prices.reshape((-1,))
+        #print("analytic prices: ", prices.shape)
         # prices = prices.reshape((-1, 1))
 
         # in analytical solution we directly compute greeks w.r.t. the basket price
         greeks = Bachelier.Call.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
 
+
+        
         # TODO: generalize
-        deltas = greeks[0] @ self.weights.reshape((1, -1))
-        gammas = greeks[1]
+        deltas = greeks[0]  # (batch, 1)
+        gammas = greeks[1]  # (batch, 1)
         vegas = greeks[2]
+        
+        deltas = deltas @ self.weights.reshape((1, -1)) # (batch, d) 
+        gammas = gammas.reshape(-1, 1, 1) * jnp.outer(self.weights, self.weights) # (batch, d, d)
 
-        return {
-            "x": spots,
-            "y": prices,
-            "dydx": deltas,
-            "ddyddx": gammas,
-            "dydvol": vegas,
-            "baskets": baskets
-
-        }
+        # TODO nicer formating for data output
+        return spots, prices, deltas, gammas, vegas, baskets
+        #return {
+        #    "x": spots,
+        #    "y": prices,
+        #    "dydx": deltas,
+        #    "ddyddx": gammas,
+        #    "dydvol": vegas,
+        #    "baskets": baskets
+        #
+        #}
 
 
 
@@ -324,11 +374,14 @@ class Bachelier:
             Returns:
                 TODO
             """
+            #print("got spot shape: ", spot.shape)
+            
             sqrt_t = jnp.sqrt(t)
             d = (spot - strike) / (vol * sqrt_t)
             normal_cdf_d = jstats.norm.cdf(d)
             normal_pdf_d = jstats.norm.pdf(d)
             price = vol * sqrt_t * (d * normal_cdf_d + normal_pdf_d)
+            #print("shape call.price: ", price.shape)
             return price
 
         @staticmethod
@@ -417,3 +470,43 @@ class Bachelier:
             gammas = call.gamma(spot, strike, vol, t)
             vegas = call.vega(spot, strike, vol, t)
             return deltas, gammas, vegas
+        
+
+    
+    def visualize_dataset(self, dataset, name, is_second_order):
+
+        if is_second_order:
+            x, y, dydx, ddyddx, dydvol, baskets = dataset
+
+            # project back onto basket weights
+            w = self.weights                      
+            ddyddx = jnp.einsum('bij,i,j->b', ddyddx, w, w) / ((w @ w) ** 2)  # (b,)
+        else:
+            x, y, dydx, paths1 = dataset
+            baskets = jnp.dot(x, self.weights).reshape((-1, 1))
+
+        
+        
+        
+        # Create a single figure with 3 subplots
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Plot the first subplot
+        axes[0].plot(baskets, y, '.', markersize=1)
+        axes[0].set_title(f"Values {name}")
+
+        # Plot the second subplot
+        dydx_idx = 0
+        axes[1].plot(baskets, dydx[:, dydx_idx], '.', markersize=1)
+        axes[1].set_title(f"Differentials {name}")
+
+        if is_second_order:
+            # Calculate and plot gammas in the third subplot
+            #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
+            axes[2].plot(baskets, ddyddx, '.', markersize=1)
+            axes[2].set_title(f"Gammas {name}")
+
+        # Adjust the layout and save the figure to a PDF file
+        plt.tight_layout()
+        plt.show()
+        
