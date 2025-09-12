@@ -27,6 +27,9 @@ import jax.random as jrandom
 from diff_ml.losses.regression import standard_loss_fn, first_order_loss_fn, second_order_loss_fn, third_order_loss_fn
 from diff_ml.utils import mse, rmse, MakeScalar
 
+from diff_ml.approx_metrics import approx_metrics, approx_metrics_per_x
+
+
 print(jax.devices())
 
 
@@ -85,23 +88,65 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch, batch_key, ref_model
 
     # Your existing component losses (all scalars)
     L0 = standard_loss_fn(base, batch)                    # 0th order
-    L1 = first_order_loss_fn(base, batch)                 # 1st order
-
-    L2, iter_data = 0.0, {}
+    
+    
+    L1, iter_data = 0.0, {}
+    L2 = 0.0
     L3 = 0.0
 
-    if variant not in ["value", "1st"]:
-        # second_order_loss_fn returns (loss, iter_data)
-        (L2, iter_data) = second_order_loss_fn(base, batch, batch_key, ref_model, dirs, dirs_per_x, Svals, variant, k)
-
-        # TODO do approximation metric here with returned directions
-
+    if not variant == "value":
+        L1 = first_order_loss_fn(base, batch)                 # 1st order
         
-        # Optional third-order branch
-        if variant == "3rdBatchSVD":
-            # You already store U_H in iter_data in your current code
-            u_H = iter_data.get("directions", None)
-            L3  = third_order_loss_fn(base, batch, batch_key, ref_model, u_H, k)
+        
+        if variant not in ["value", "1st"]:
+            # second_order_loss_fn returns (loss, iter_data)
+            (L2, iter_data) = second_order_loss_fn(base, batch, batch_key, ref_model, dirs, dirs_per_x, Svals, variant, k)
+            
+
+
+
+            if not variant == "fullHessian":
+                # Do approximation metric here with returned directions
+                u_H = iter_data.get("directions", None)
+    
+                x = batch[0]
+                x_raw_flat = x.reshape(x.shape[0], ref_model.n_dims)
+                
+                if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
+                    approximation_metrics_ref = approx_metrics(
+                                                               #fn=MakeScalar(model),
+                                                               fn=ref_model.reference_fn(),
+                                                               ref_model=ref_model,
+                                                               #x=x,
+                                                               x=x_raw_flat, 
+                                                               U_dirs=u_H
+                                                               )
+                if variant == "perXSVD" or variant == "streaming":
+                    approximation_metrics_ref = approx_metrics_per_x(
+                                                               #fn=MakeScalar(model),
+                                                               fn=ref_model.reference_fn(),
+                                                               ref_model=ref_model,
+                                                               #x=x,
+                                                               x=x_raw_flat, 
+                                                               dirs_per_x=u_H
+                                                               )
+    
+    
+                iter_data["approximation metrics ref"] = approximation_metrics_ref
+
+
+
+
+
+
+
+
+            # Optional third-order branch
+            if variant == "3rdBatchSVD":
+                # You already store U_H in iter_data in your current code
+                u_H = iter_data.get("directions", None)
+                L3  = third_order_loss_fn(base, batch, batch_key, ref_model, u_H, k)
+                
 
 
     if not learnable_loss_weights:
@@ -115,7 +160,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch, batch_key, ref_model
             total = a*L0 + b*L1
             iter_data["eff_w_norm"] = [a, b, 0, 0]
             return total, iter_data
-        elif variant == "3rdbatchSVD":
+        elif variant == "3rdBatchSVD":
             a = 1/4
             b = 1/4
             c = 1/4
@@ -143,7 +188,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch, batch_key, ref_model
     else:
         active = [0, 1, 2]
 
-    
+    L1 = L1 if not variant == "value" else 0.0
     L2 = L2 if variant not in ["value", "1st"] else 0.0
     L3 = L3 if variant == "3rdBatchSVD" else 0.0
     loss_vec = jnp.array([L0, L1, L2, L3])
@@ -161,7 +206,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch, batch_key, ref_model
 
     # If you want to log the normalized weights per iteration:
     iter_data["eff_w_norm"] = norm_w
-    
+
     return total, iter_data
 
 
@@ -207,7 +252,7 @@ def train(
     sketch,
     variant,
     k,
-    learnable_loss_weights: bool = True
+    learnable_loss_weights: bool = True,
 ) -> PyTree:
     
 
@@ -336,5 +381,5 @@ def train(
 
     avg_time_per_batch = sum_batch_times / n_steps
     print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
-
+    
     return weighted_model, iteration_datas, sketch, avg_time_per_batch

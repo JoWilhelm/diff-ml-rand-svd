@@ -1,3 +1,7 @@
+import jax
+import jax.numpy as jnp
+
+
 def approx_metrics(fn, ref_model, x, U_dirs):
     """
     Batch-shared U_dirs: shape (k, d) in the SAME coordinate system as x and fn.

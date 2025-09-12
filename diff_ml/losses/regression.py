@@ -344,8 +344,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
         iteration_data["directions"] = dirs_per_x_flat
 
     
-    # TODO move this out of 2nd order loss function
-    
+    ## moved out of 2nd order loss function
+    #
     #x_raw_flat = x_raw.reshape(x.shape[0], ref_model.n_dims)
     #
     #if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
@@ -377,6 +377,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
     #
     #
     #iteration_data["approximation metrics ref"] = approximation_metrics_ref
+    
 
 
     return hess_loss, iteration_data

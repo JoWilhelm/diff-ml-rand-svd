@@ -200,18 +200,18 @@ class Analytic(eqx.Module):
 
 
 
-            # 3rd order
-            dddydddx = jax.vmap(jax.jacfwd(jax.hessian(self.type_fn())))(x)
-            # build (d×d×d) scale tensor
-            scale3 = (self.x_std[:, None, None] *
-                      self.x_std[None, :, None] *
-                      self.x_std[None, None, :]) / self.y_std
-            # broadcast over batch
-            dddydddx_normalized = dddydddx * scale3[None, :, :, :]
+            ## 3rd order
+            #dddydddx = jax.vmap(jax.jacfwd(jax.hessian(self.type_fn())))(x)
+            ## build (d×d×d) scale tensor
+            #scale3 = (self.x_std[:, None, None] *
+            #          self.x_std[None, :, None] *
+            #          self.x_std[None, None, :]) / self.y_std
+            ## broadcast over batch
+            #dddydddx_normalized = dddydddx * scale3[None, :, :, :]
 
 
 
-            return x_normalized, y_normalized, dydx_normalized, ddyddx_normalized, dddydddx_normalized
+            return x_normalized, y_normalized, dydx_normalized, ddyddx_normalized, None#dddydddx_normalized
             ##return x, y, dydx, ddyddx, None
 
 
