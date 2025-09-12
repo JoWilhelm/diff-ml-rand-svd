@@ -1,4 +1,7 @@
-
+from jaxtyping import PRNGKeyArray
+from typing import Callable
+from diff_ml.utils import generate_random_vectors, safe_normalize_vectors
+from diff_ml.hvps_and_t3vps import hvp, hvp_batch, tvp_batch
 
 # apply PCA to first-order gradients of predictions
 def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):

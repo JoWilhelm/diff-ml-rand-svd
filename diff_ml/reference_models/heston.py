@@ -16,7 +16,7 @@ from typing_extensions import TypeAlias
 import jax.numpy as jnp
 
 Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
-from utils import Range
+from diff_ml.utils import Range, normalize
 
     
 class Heston(eqx.Module):
@@ -287,30 +287,30 @@ class Heston(eqx.Module):
 
 
 
-            # 3rd order
-            dddydddx = jax.vmap(jax.jacfwd(jax.hessian(self.basket_price_x_flat)))(x_flat) # (b, 2, 2, 2)
-            #jax.debug.print("dddydddx shape: {dddydddx_shape}", dddydddx_shape=dddydddx.shape)
-            
-
-            x_std_flat = self.x_std.reshape(-1)               # (d,)
-            # scale3[i,j,k] = x_std[i] * x_std[j] * x_std[k] / y_std
-            scale3 = (x_std_flat[:, None, None] *
-                      x_std_flat[None, :, None] *
-                      x_std_flat[None, None, :]) / self.y_std   # (d, d, d)
-
-            # broadcast over batch and apply
-            dddydddx_normalized = dddydddx * scale3[None, ...]  # (batch, d, d, d)
-
-            ## build (d×d×d) scale tensor
-            #scale3 = 
-            ## broadcast over batch
-            #dddydddx_normalized = dddydddx * scale3[None, ...]
+            ## 3rd order
+            #dddydddx = jax.vmap(jax.jacfwd(jax.hessian(self.basket_price_x_flat)))(x_flat) # (b, 2, 2, 2)
+            ##jax.debug.print("dddydddx shape: {dddydddx_shape}", dddydddx_shape=dddydddx.shape)
+            #
+            #
+            #x_std_flat = self.x_std.reshape(-1)               # (d,)
+            ## scale3[i,j,k] = x_std[i] * x_std[j] * x_std[k] / y_std
+            #scale3 = (x_std_flat[:, None, None] *
+            #          x_std_flat[None, :, None] *
+            #          x_std_flat[None, None, :]) / self.y_std   # (d, d, d)
+            #
+            ## broadcast over batch and apply
+            #dddydddx_normalized = dddydddx * scale3[None, ...]  # (batch, d, d, d)
+            #
+            ### build (d×d×d) scale tensor
+            ##scale3 = 
+            ### broadcast over batch
+            ##dddydddx_normalized = dddydddx * scale3[None, ...]
 
 
 
 
             #return x_flat, y, dydx_flat, H_blocks, None
-            return x_normalized_flat, y_normalized, dydx_normalized_flat, ddyddx_normalized, dddydddx_normalized
+            return x_normalized_flat, y_normalized, dydx_normalized_flat, ddyddx_normalized, None #dddydddx_normalized
 
 
 

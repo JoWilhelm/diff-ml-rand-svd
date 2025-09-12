@@ -58,3 +58,20 @@ def plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds):
     #plt.show()
     now = datetime.datetime.now()
     fig.savefig(f'result/eval_ml_{now}.pdf', bbox_inches='tight')
+
+
+
+def plot_3d_data(x1, x2, y, x1_label, x2_label, y_label, title=None):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    sc = ax.scatter(x1, x2, y, c=y, cmap=plt.cm.viridis)
+
+    # Add a colorbar to show the mapping of colors to z-values
+    cbar = fig.colorbar(sc)
+    cbar.set_label(y_label)
+    
+    ax.set_title(title if title else '3D Scatter Plot')
+    ax.set_xlabel(x1_label)
+    ax.set_ylabel(x2_label)
+    ax.set_zlabel(y_label)
+    return fig

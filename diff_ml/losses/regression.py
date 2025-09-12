@@ -12,8 +12,10 @@ Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 import jax
 import jax.random as jrandom
 
-from utils import mse, rmse, MakeScalar
+from diff_ml.utils import mse, rmse, MakeScalar, generate_random_vectors
 
+from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions
+from diff_ml.hvps_and_t3vps import hvp_batch, tvp_batch, hvp_batch_per_input
 
 #print(jax.devices())
 

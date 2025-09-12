@@ -1,5 +1,14 @@
+import jax
+import equinox as eqx
 import jax.random as jrandom
-
+from diff_ml.reference_models.analytic import Analytic
+from diff_ml.reference_models.bachelier import Bachelier
+from diff_ml.reference_models.heston import Heston
+from diff_ml.reference_models.mnist import MNIST_ref
+from diff_ml.nn.utils import init_linear_weight, trunc_init
+import optax
+from diff_ml.nn.train import train
+from diff_ml.utils import range
 
 key = jrandom.PRNGKey(1)
 key, subkey = jrandom.split(key)
@@ -8,29 +17,19 @@ key, subkey = jrandom.split(key)
 
 #ref_model_analytic = Analytic(
 #    key=key,
-#    #type="RHE",
+#    type="RHE",
 #    #type="Rastrigin",
-#    type="Rosenbrock",
+#    #type="Rosenbrock",
 #    #type="Ackley", 
 #    d=5,
-#    min_x=-1.5,
-#    max_x=2.5
+#    min_x=-5.0,
+#    max_x=5.0
 #)
 #RHE: min_x = -5.0, max_x = 5.0
 #Rastrigin: min_x = -5.12, max_x = 5.12
 #Rosenbrock: min_x = -1.5, max_x = 2.5
 #Ackley: min_x = -5.0, max_x = 5.0
 
-
-#ref_model_sfi = SFI_Bratu(
-#    key=key,
-#    s=100, 
-#    lam=6.0, 
-#    tol_res=1e-6, 
-#    tol_cg=1e-6, 
-#    maxiter_cg=500, 
-#    maxiter_newton=500
-#)
 
 
 #ref_model_mnist = MNIST_ref(
@@ -65,7 +64,6 @@ ref_model_bachelier = Bachelier(
 )
 
 
-#ref_model = ref_model_sfi
 ref_model = ref_model_bachelier
 #ref_model = ref_model_heston
 #ref_model = ref_model_mnist
@@ -94,16 +92,17 @@ print("dddydddx:", test_set[4].shape)
 
 
 
-#train_sample_batch = ref_model.sample(key=key, n_samples=32)
+##train_sample_batch = ref_model.sample(key=key, n_samples=32)
 train_sample_batch = ref_model.sample(key=key, n_samples=256)
+#
+#
+#
+#ref_model.visualize_dataset(test_set, name="Test", is_second_order=True)
+#ref_model.visualize_dataset(train_sample_batch, name="Train", is_second_order=False)
+#
+#
+#ref_model.visualize_third(x=test_set[0], dddydddx=test_set[4], name="Test")
 
-
-
-ref_model.visualize_dataset(test_set, name="Test", is_second_order=True)
-ref_model.visualize_dataset(train_sample_batch, name="Train", is_second_order=False)
-
-
-ref_model.visualize_third(x=test_set[0], dddydddx=test_set[4], name="Test")
 
 
 
@@ -116,6 +115,7 @@ variant = "batchSVD"
 #variant = "perXSVD"
 #variant = "streaming"
 #variant = "fullHessian"
+
 
 learnable_loss_weights = True
 k = 1
@@ -137,24 +137,18 @@ surrogate_model = mlp
 
 
 
-
-#surrogate_model = CNNScalar(
-#    input_size=int(28 * 0.5),
-#    depth=3,
-#    base_channels=32,
-#    key=subkey,
-#)
-
-# sketch
-key, subkey = jax.random.split(key)
-sketch = StreamingHessianSketch(
-            fn=ref_model.reference_fn(), 
-            ref_model=ref_model,
-            d=ref_model.n_dims, 
-            r=streaming_r,
-            k=k, 
-            key=subkey)
-#sketch = None
+if variant == "streaming":
+    # sketch
+    key, subkey = jax.random.split(key)
+    sketch = StreamingHessianSketch(
+                fn=ref_model.reference_fn(), 
+                ref_model=ref_model,
+                d=ref_model.n_dims, 
+                r=streaming_r,
+                k=k, 
+                key=subkey)
+else:
+    sketch = None
 
 # TODO need normalization layers? at least for bachelier?
 ## Specify the surrogate model architecture

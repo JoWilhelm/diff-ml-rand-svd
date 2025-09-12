@@ -25,7 +25,7 @@ from typing_extensions import TypeAlias
 import jax.numpy as jnp
 
 Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
-from utils import Range
+from diff_ml.utils import Range
 
 
 # ---------- Model (same as before) ----------

@@ -14,7 +14,8 @@ import jax.numpy as jnp
 
 Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 
-
+from diff_ml.utils import normalize
+from diff_ml.plotting import plot_3d_data
 
 
 

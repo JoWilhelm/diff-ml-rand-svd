@@ -3,6 +3,11 @@ import jax.numpy as jnp
 import equinox as eqx
 
 
+
+def normalize(x, x_mean, x_std):
+    return (x - x_mean) / x_std
+
+
 def normalize_vectors(vectors):
     return vectors / jnp.linalg.norm(vectors, axis=1, keepdims=True)
 

@@ -1,5 +1,5 @@
-from typing import Tuple
-from jaxtyping import Array, Float, PRNGKeyArray
+from typing import Final
+from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
 
 import jax
@@ -8,12 +8,14 @@ import equinox as eqx
 import jax.random as jrandom
 
 from typing_extensions import TypeAlias
+import jax.scipy.stats as jstats
 
-
+from functools import partial
 
 import jax.numpy as jnp
 
 Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
+from diff_ml.reference_models.payoff import EuropeanPayoff
 
 
 

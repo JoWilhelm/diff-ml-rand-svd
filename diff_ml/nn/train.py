@@ -13,6 +13,8 @@ import optax
 
 
 from typing_extensions import TypeAlias
+from jaxtyping import Array, Float, PyTree
+
 
 import jax.numpy as jnp
 Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
@@ -20,8 +22,10 @@ Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
-from jaxtyping import Array, Float
 
+
+from diff_ml.losses.regression import standard_loss_fn, first_order_loss_fn, second_order_loss_fn, third_order_loss_fn
+from diff_ml.utils import mse, rmse, MakeScalar
 
 print(jax.devices())
 
