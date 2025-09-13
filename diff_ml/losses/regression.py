@@ -6,8 +6,7 @@ import equinox as eqx
 
 from typing_extensions import TypeAlias
 from jaxtyping import Array, Float
-
-Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
+from diff_ml.typing import DifferentialData
 
 import jax
 import jax.random as jrandom
@@ -22,17 +21,20 @@ from diff_ml.hvps_and_t3vps import hvp_batch, tvp_batch, hvp_batch_per_input
 
 
 
-def standard_loss_fn(model, batch):
-    x = batch[0]
-    y = batch[1]
+def standard_loss_fn(model, batch: DifferentialData):
+    x = batch.x
+    y = batch.y
     y_pred = vmap(model)(x)
     return mse(y, y_pred)
 
 
 
-def first_order_loss_fn(model, batch):
+def first_order_loss_fn(model, batch: DifferentialData):
     
-    x, y, dydx, additional_args = batch
+    x = batch.x
+    y = batch.y
+    dydx = batch.dy
+
 
     y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
     assert(y_pred.shape == y.shape)
@@ -48,18 +50,19 @@ def first_order_loss_fn(model, batch):
 
 
 @eqx.filter_jit
-def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_per_x, Svals, variant, k) -> Float:
+def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_model, dirs, dirs_per_x, Svals, variant, k) -> Float:
     
-    if not variant in ["random", "batchSVD", "perXSVD", "streaming", "fullHessian"]:
-        raise ValueError("variant must be either random, batchSVD, perXSVD, streaming or fullHessian")
+    if not variant in ["random", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:
+        raise ValueError("variant must be either random, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
 
     iteration_data = {}
 
     #x = batch[0]
     #y = batch[1]
     #dydx = batch[2]
-    x, y, dydx, additional_args = batch
-    b = x.shape[0]
+    x = batch.x
+    y = batch.y
+    dydx = batch.dy
     
 
     y_pred, dydx_pred = vmap(eqx.filter_value_and_grad(MakeScalar(model)))(x)
@@ -75,7 +78,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
 
     
 
-    ref_fn = ref_model.reference_fn(additional_args)
+    ref_fn = ref_model.reference_fn()
 
     
     
@@ -90,13 +93,13 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
     ## random directions
     if variant == "random":
         key, subkey = jrandom.split(key)
-        rand_directions = generate_random_vectors((k, *ref_model.un_flattened_shape), key=key, normalize=True)
+        rand_directions = generate_random_vectors((k, ref_model.n_dims), key=key, normalize=True)
 
 
     # randSVD directions
     # TODO calculate this once before?
 
-    if variant == "batchSVD": 
+    if variant == "batchSVD" or variant == "3rdBatchSVD": 
         rand_svd_directions_ref, eval_dir, k_dir, Svals = get_rand_SVD_directions(
                                         ref_model=ref_model,
                                         f=ref_fn,
@@ -124,19 +127,14 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
     #                                is_ref_fn=False
     #                                )
     
-    # TODO the stacking logic seems wrong
-    #stacked = jnp.stack([rand_svd_directions_ref, rand_svd_directions_model], axis=2)        
-    #interleaved_rand_svd_dirs = stacked.reshape((2*len(rand_svd_directions_ref), *ref_model.un_flattened_shape))
-    #combined = jnp.concatenate([rand_svd_directions_ref, rand_svd_directions_model], axis=0)
-
+    
     
     if variant == "perXSVD":
         dirs_per_x = U_batch
         
     if variant == "perXSVD" or variant == "streaming":
-        dirs_per_x_unflat = dirs_per_x.reshape(b, k, *ref_model.un_flattened_shape)
-        dirs_per_x_flat = dirs_per_x.reshape(b, k, ref_model.n_dims)
-        dirs_per_x_scaled_flat = dirs_per_x_flat
+        #dirs_per_x_flat = dirs_per_x.reshape(b, k, ref_model.n_dims)
+        #dirs_per_x_scaled_flat = dirs_per_x_flat
         
         
 
@@ -147,7 +145,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
         target_hvps = hvp_batch_per_input(
             f=ref_fn,
             inputs=x_raw, 
-            directions=dirs_per_x_scaled_flat
+            directions=dirs_per_x
         )
         #jax.debug.print("targets.shape {shape}", shape=target_hvps.shape)
 
@@ -156,16 +154,16 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
         pred_hvps = hvp_batch_per_input(
             f=MakeScalar(model),
             inputs=x, 
-            directions=dirs_per_x_flat
+            directions=dirs_per_x
         )
         #jax.debug.print("preds.shape {shape}", shape=pred_hvps.shape)
 
 
     
-    if variant == "batchSVD" or variant == "random":
+    if variant == "batchSVD" or variant == "random"  or variant == "3rdBatchSVD":
         if variant == "random":
             directions = rand_directions
-        if variant == "batchSVD":
+        if variant == "batchSVD" or variant == "3rdBatchSVD":
             directions = rand_svd_directions_ref
             #directions = dirs
             #directions = rand_directions
@@ -182,8 +180,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
         #dirs_norm_flat = dirs_norm_unflat.reshape(k, ref_model.n_dims)
 
         # scaling directions to account for normalization
-        dirs_flat = directions.reshape(k, ref_model.n_dims)
-        dirs_scaled_flat = dirs_flat
+        #dirs_flat = directions.reshape(k, ref_model.n_dims)
+        #dirs_scaled_flat = dirs_flat
         
 
         ###### ---- Second-Order Targets via CFD ---- ####
@@ -217,7 +215,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
         target_hvps = hvp_batch(
             f=ref_fn,
             inputs=x_raw, 
-            directions=dirs_scaled_flat
+            directions=directions
         )
 
     
@@ -252,7 +250,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
         pred_hvps = hvp_batch(
             f=MakeScalar(model),
             inputs=x, 
-            directions=dirs_flat
+            directions=directions
         )
 
         ## conditional directions
@@ -339,45 +337,11 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
     
     
     if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
-        iteration_data["directions"] = dirs_flat
+        iteration_data["directions"] = directions
     
     if variant == "perXSVD" or variant == "streaming":
-        iteration_data["directions"] = dirs_per_x_flat
+        iteration_data["directions"] = directions
 
-    
-    ## moved out of 2nd order loss function
-    #
-    #x_raw_flat = x_raw.reshape(x.shape[0], ref_model.n_dims)
-    #
-    #if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
-    #    iteration_data["directions"] = dirs_flat
-    #    approx_dirs = dirs_scaled_flat
-    #    if variant == "random":
-    #        approx_dirs = rand_directions.reshape(-1, ref_model.n_dims)
-    #    approximation_metrics_ref = approx_metrics(
-    #                                               #fn=MakeScalar(model),
-    #                                               fn=ref_fn,
-    #                                               ref_model=ref_model,
-    #                                               #x=x,
-    #                                               x=x_raw_flat, 
-    #                                               U_dirs=approx_dirs
-    #                                               )
-    #if variant == "perXSVD" or variant == "streaming":
-    #    iteration_data["directions"] = dirs_per_x_flat
-    #    approx_dirs_per_x = dirs_per_x_scaled_flat
-    #    if variant == "random":
-    #        approx_dirs_per_x = rand_directions.reshape(-1, ref_model.n_dims)
-    #    approximation_metrics_ref = approx_metrics_per_x(
-    #                                               #fn=MakeScalar(model),
-    #                                               fn=ref_fn,
-    #                                               ref_model=ref_model,
-    #                                               #x=x,
-    #                                               x=x_raw_flat, 
-    #                                               dirs_per_x=approx_dirs_per_x
-    #                                               )
-    #
-    #
-    #iteration_data["approximation metrics ref"] = approximation_metrics_ref
     
 
 
@@ -393,18 +357,17 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_pe
 
 
 @eqx.filter_jit
-def third_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, U_H, k) -> Float:
+def third_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_model, U_H, k) -> Float:
     
     
-    x, y, dydx, additional_args = batch
-    
+    x = batch.x
 
     
     k = min(k, ref_model.n_dims)  # ensure k does not exceed the number of dimensions
 
 
     
-    ref_fn = ref_model.reference_fn(additional_args)
+    ref_fn = ref_model.reference_fn()
 
     
     

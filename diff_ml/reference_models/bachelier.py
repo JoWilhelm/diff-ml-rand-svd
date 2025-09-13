@@ -1,29 +1,22 @@
 """
 TODO
+
+credit: Neil Kichler
 """
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 
-# TODO typing stuff clean
-from jaxtyping import Array, Float, PRNGKeyArray
-
-
-
-from typing import Final
-from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
-
-
-
-from typing_extensions import TypeAlias
 import jax.scipy.stats as jstats
 
 from functools import partial
 
-import jax.numpy as jnp
+from typing import Final
+from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
+from diff_ml.typing import DifferentialData, Scalar
 
-#Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 from diff_ml.reference_models.payoff import EuropeanPayoff
+from diff_ml.reference_models.reference_model_class import ReferenceModel
 
 
 
@@ -36,10 +29,7 @@ def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
 
 
 
-# TODO: seperate the analytic part into a seperate class
-# TODO: seperate the basket aspect out of the model
-#@dataclass
-class Bachelier:
+class Bachelier(ReferenceModel):
     """Bachelier model.
 
     References:
@@ -60,7 +50,7 @@ class Bachelier:
     """
 
     key: PRNGKeyArray
-    #n_dims: Final[int]
+    n_dims: Final[int]
     basket_dim: Final[int]
     weights: Float[Array, "basket_dim"]
 
@@ -85,43 +75,6 @@ class Bachelier:
         # scale weights to sum up to 1
         self.weights = weights / jnp.sum(weights)
         self.n_dims = basket_dim
-
-    def baskets(self, spots):
-        """TODO: ."""
-        return jnp.dot(spots, self.weights).reshape((-1, 1))
-
-    @staticmethod
-    def path_simulation():
-        """TODO: ."""
-        pass
-
-    @staticmethod
-    def payoff_analytic_differentials(xs, paths, weights, strike_price):
-        """TODO: ."""
-        spots_end = xs + paths
-        baskets_end = jnp.dot(spots_end, weights)
-        analytic_differentials = jnp.where(baskets_end > strike_price, 1.0, 0.0)
-        analytic_differentials = analytic_differentials.reshape((-1, 1))
-        weights = weights.reshape((1, -1))
-        # TODO: Replace either with jnp.multiply or jnp.matmul.
-        #       Make sure to use the correct one! Here it doesn't
-        #       matter since we have (x, 1) but this makes it clearer
-        #       what the intention behind this operation is.
-        result = analytic_differentials * weights
-        return result
-
-    @staticmethod
-    def payoff_antithetic_analytic_differentials(xs, paths, weights, strike_price):
-        """TODO: ."""
-        spots_end_a = xs + paths
-        baskets_end_a = jnp.dot(spots_end_a, weights)
-        spots_end_b = xs - paths
-        baskets_end_b = jnp.dot(spots_end_b, weights)
-
-        differentials_a = jnp.where(baskets_end_a > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
-        differentials_b = jnp.where(baskets_end_b > strike_price, 1.0, 0.0).reshape((-1, 1)) * weights.reshape((1, -1))
-        differentials = 0.5 * (differentials_a + differentials_b)
-        return differentials
 
    
    
@@ -163,16 +116,7 @@ class Bachelier:
     
 
 
-
-
-    #def reference_fn(self, *args):
-    #    return partial(Bachelier.antithetic_payoff,
-    #                   weights=self.weights,
-    #                   strike_price=self.strike_price,
-    #                   paths=args[0])
-    
-
-    def analytic_basket_price_singe_x(self, x):
+    def analytic_basket_price_single_x(self, x) -> Scalar:
         basket = jnp.dot(x, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
         price = Bachelier.Call.price(
@@ -185,15 +129,17 @@ class Bachelier:
         return price[0]
         
     def reference_fn(self):
-        return self.analytic_basket_price_singe_x 
+        return self.analytic_basket_price_single_x 
 
 
     
     
 
-    def sample(self, key, n_samples: int):
+    def sample(self, key: PRNGKeyArray, n_samples: int, order=1) -> DifferentialData:
         """TODO: ."""
 
+        if order > 1:
+            raise ValueError("Differential data of order > 1 not supported via sample(). Use analytic() for that, e.g. for test set generation.")
 
         #  w.l.o.g., initialize spots, i.e. S_0, as all ones
         spots_0 = jnp.repeat(1.0, self.n_dims)
@@ -201,9 +147,6 @@ class Bachelier:
         # generate random correlation matrix
         key, subkey = jrandom.split(key)
         correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
-
-        # TODO: consider using cupy for random number generation in MC simulation
-        #       in general we should extract the random number generator to be agnostic
 
         # generate random volatilities
         key, subkey = jrandom.split(key)
@@ -215,17 +158,12 @@ class Bachelier:
         v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
         vols = vols * self.vol_basket / v
 
-
         t_delta = self.t_maturity - self.t_exposure
 
-
-
-        
         diag_v = jnp.diag(vols)
         cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
         key, subkey = jrandom.split(key)
         
-        ### ---- old with cholesky ---- ####
         # Cholesky
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
         # increase vols for simulation of xs so we have more samples in the wings
@@ -235,89 +173,35 @@ class Bachelier:
         paths_0 = normal_samples[0] @ chol_0.T
         paths_1 = normal_samples[1] @ chol.T
 
-
-        #### ---- new: sample directly from correlated distribution ---- ####
-        ## TODO find out why this does not work
-        #mean = jnp.zeros(self.n_dims)
-        #cov_0 = cov * self.t_exposure * self.vol_mult**2  # Used for paths_0
-        #cov_1 = cov * t_delta  # Used for paths_1
-        #paths_0 = jrandom.multivariate_normal(subkey, mean, cov_0, shape=(n_samples,))
-        #paths_1 = jrandom.multivariate_normal(subkey, mean, cov_1, shape=(n_samples,))
-
-
-
         spots_1 = spots_0 + paths_0
 
-
-
-
         if self.use_antithetic:
-            analytic_differentials_fn = Bachelier.payoff_antithetic_analytic_differentials
             payoff_fn = Bachelier.antithetic_payoff
         else:
-            analytic_differentials_fn = Bachelier.payoff_analytic_differentials
             payoff_fn = Bachelier.payoff
 
-        differentials_analytic = analytic_differentials_fn(spots_1, paths_1, self.weights, self.strike_price)
         payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
 
         payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
         differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
-        #assert jnp.allclose(differentials_analytic, differentials_vjp)  # noqa: S101
-
-
-        #return {
-        #    "x": spots_1,
-        #    "y": payoffs_vjp,
-        #    "dydx": differentials_vjp,
-        #    "paths1": paths_1, 
-        #}
-        return spots_1, payoffs_vjp, differentials_vjp, paths_1
+        return DifferentialData(
+            order = 1,
+            x = spots_1,
+            y = payoffs_vjp,
+            dy = differentials_vjp
+        )
 
 
 
 
-    def dataloader(self):
-        """Yields from already computed data."""
-        # TODO: Implement
-        pass
 
-    def batch_generator(self, n_batch: int):
-        """Generates a batch of data on the fly."""
-        while True:
-            yield self.sample(n_batch)
-
-#    def generator(self, n_precompute: int) -> DataGenerator:
-#        """Generates new data on the fly.
-#
-#        Note that this generator continues forever. The `n_precompute` parameter is only
-#        used to control the number of samples that are computed at once. The generator
-#        will then yield `n_precompute` times before computing the next set of data points.
-#
-#        Args:
-#            n_precompute: number of samples to generate at once.
-#
-#        Yields:
-#            A Data object.
-#        """
-#        while True:
-#            samples = self.sample(n_precompute)
-#            keys = samples.keys()
-#            values = samples.values()
-#
-#            for i in range(n_precompute):
-#                ith_sample = (v[i] for v in values)
-#                sample = dict(zip(keys, ith_sample))
-#                yield sample
-
-
-    def get_test_set(self, n_samples):
-        return self.analytic(n_samples)
+    def get_test_set(self, n_samples, order=2) -> DifferentialData:
+        return self.analytic(n_samples, order=order)
 
 
 
-    def analytic(self, n_samples, minval=0.5, maxval=1.5):
+    def analytic(self, n_samples, minval=0.5, maxval=1.5, order=2) -> DifferentialData:
         """TODO: ."""
 
         # adjust lower and upper for dimension
@@ -334,37 +218,38 @@ class Bachelier:
         
         prices = Bachelier.Call.price(baskets, self.strike_price, self.vol_basket, time_to_maturity)
         prices = prices.reshape((-1,))
-        #print("analytic prices: ", prices.shape)
-        # prices = prices.reshape((-1, 1))
-
+        
         # in analytical solution we directly compute greeks w.r.t. the basket price
-        greeks = Bachelier.Call.greeks(baskets, self.strike_price, self.vol_basket, time_to_maturity)
-
-
-        
-        # TODO: generalize
-        deltas = greeks[0]  # (batch, 1)
-        gammas = greeks[1]  # (batch, 1)
-        vegas = greeks[2]
-        
+        deltas = Bachelier.Call.delta(baskets, self.strike_price, self.vol_basket, time_to_maturity)
         deltas = deltas @ self.weights.reshape((1, -1)) # (batch, d) 
-        gammas = gammas.reshape(-1, 1, 1) * jnp.outer(self.weights, self.weights) # (batch, d, d)
+        
+        gammas = None
+        speeds = None
+        if order >= 2:
+            gammas = Bachelier.Call.gamma(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+            w2 = jnp.outer(self.weights, self.weights)
+            gammas = gammas.reshape(-1, 1, 1) * w2 # (batch, d, d)
+        if order >= 3:
+            speeds = Bachelier.Call.speed(baskets, self.strike_price, self.vol_basket, time_to_maturity)
+            w3 = jnp.einsum('i,j,k->ijk', self.weights, self.weights, self.weights)  
+            speeds = speeds.reshape(-1, 1, 1, 1) * w3      # (batch, d, d, d)
+        if order >= 4:
+            raise ValueError("Differential Data for order >= 4 not supported")
 
-        # TODO nicer formating for data output
-        return spots, prices, deltas, gammas, vegas, baskets
-        #return {
-        #    "x": spots,
-        #    "y": prices,
-        #    "dydx": deltas,
-        #    "ddyddx": gammas,
-        #    "dydvol": vegas,
-        #    "baskets": baskets
-        #
-        #}
+        return DifferentialData(
+            order = order,
+            x = spots,
+            y = prices,
+            dy = deltas,
+            ddy = gammas,
+            dddy = speeds
+        ) 
 
 
 
 
+
+    # Credit Neil Kichler
     class Call:
         """Analytic solutions to price and greeks (delta, gamma, vega) of call option on Bachelier."""
 
@@ -438,26 +323,12 @@ class Bachelier:
             return jstats.norm.pdf(d) / (vol * jnp.sqrt(t))
 
         @staticmethod
-        def vega(spot, strike, vol, t) -> Array:
-            r"""Analytical vega.
-
-            The vega is the 2nd-order derivative of the price
-            sensitivity w.r.t. the volatility.
-
-            As in 5.1 of https://arxiv.org/pdf/2104.08686.pdf.
-
-            Args:
-                spot: an array of spot prices, also denoted as $S_0$.
-                strike: an array of strike prices, also denoted as $K$.
-                vol: volatility, also denoted as $\sigma_N$.
-                t: time to maturity, also denoted as $T - t$ or $T$.
-
-
-            Returns:
-                TODO
-            """
+        def speed(spot, strike, vol, t):
+            # TODO double check that this is correct
+            """Third derivative wrt spot (a.k.a. speed)."""
             d = (spot - strike) / (vol * jnp.sqrt(t))
-            return jnp.sqrt(t) * jstats.norm.pdf(d)
+            return - d * jstats.norm.pdf(d) / (vol**2 * t)
+
 
         @staticmethod
         def greeks(spot, strike, vol, t) -> tuple[Array, Array, Array]:
@@ -478,12 +349,31 @@ class Bachelier:
             call = Bachelier.Call
             deltas = call.delta(spot, strike, vol, t)
             gammas = call.gamma(spot, strike, vol, t)
-            vegas = call.vega(spot, strike, vol, t)
-            return deltas, gammas, vegas
+            speed = call.speed(spot, strike, vol, t)
+            return deltas, gammas, speed
         
 
     
-    def visualize_dataset(self, dataset, name, is_second_order):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # TODO clean up
+    def visualize_data(self, dataset: DifferentialData, name: str):
 
         if is_second_order:
             x, y, dydx, ddyddx, dydvol, baskets = dataset

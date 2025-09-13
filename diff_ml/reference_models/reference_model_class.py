@@ -2,26 +2,33 @@ from jaxtyping import Array, Float, PRNGKeyArray
 from typing import Callable
 from abc import ABC, abstractmethod
 
-from diff_ml.typing import Data
+from diff_ml.typing import DifferentialData, Scalar
 
 
 class ReferenceModel(ABC):
 
 
-    def __init__(self, key: PRNGKeyArray, n_dims: int, unflattened_shape: tuple):
+    def __init__(self, key: PRNGKeyArray, n_dims: int):
         self.key = key
         self.n_dims = n_dims
-        self.unflattened_shape = unflattened_shape
-
+        
     @abstractmethod
-    def get_testset(self, n_samples: int) -> Data: 
+    def get_test_set(self, n_samples: int, order: int = 2) -> DifferentialData: 
         """
         TODO
         """
         pass
 
     @abstractmethod
-    def sample(self, key: PRNGKeyArray, n_samples: int, higher_order: bool = False) -> Data: 
+    def sample(self, key: PRNGKeyArray, n_samples: int, order: int = 1) -> DifferentialData: 
+        """
+        TODO
+        """
+        pass
+    
+    
+    @abstractmethod
+    def reference_fn(self) -> Callable[[Float[Array, "d"]], Scalar]:
         """
         TODO
         """
@@ -29,11 +36,10 @@ class ReferenceModel(ABC):
     
     
     @abstractmethod
-    def reference_fn(self) -> Callable[[Float[Array, "d"]], float]:
+    def visualize_data(self, dataset: DifferentialData, name: str):
         """
         TODO
         """
         pass
     
-
 

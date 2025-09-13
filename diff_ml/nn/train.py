@@ -1,7 +1,7 @@
 import equinox as eqx
 import jax.numpy as jnp
 from typing import Tuple
-
+from diff_ml.typing import DifferentialData
 
 import jax
 from jax import vmap
@@ -17,14 +17,15 @@ from jaxtyping import Array, Float, PyTree
 
 
 import jax.numpy as jnp
-Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
-#DataGenerator: TypeAlias = Generator[Data, None, None]
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 
 
 from diff_ml.losses.regression import standard_loss_fn, first_order_loss_fn, second_order_loss_fn, third_order_loss_fn
+from diff_ml.losses.directions import StreamingHessianSketch
+from diff_ml.reference_models.reference_model_class import ReferenceModel
+
 from diff_ml.utils import mse, rmse, MakeScalar
 
 from diff_ml.approx_metrics import approx_metrics, approx_metrics_per_x
@@ -81,7 +82,7 @@ class WeightedSurrogate(eqx.Module):
 
 
 
-def total_loss_fn(weighted_model: WeightedSurrogate, batch, batch_key, ref_model, dirs, dirs_per_x, Svals, variant: str, k: int, learnable_loss_weights: bool = True):
+def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key, ref_model, dirs, dirs_per_x, Svals, variant: str, k: int, learnable_loss_weights: bool = True):
     
     base = weighted_model.base
     uw   = weighted_model.uw
@@ -109,24 +110,18 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch, batch_key, ref_model
                 # Do approximation metric here with returned directions
                 u_H = iter_data.get("directions", None)
     
-                x = batch[0]
+                x = batch.x
                 x_raw_flat = x.reshape(x.shape[0], ref_model.n_dims)
                 
                 if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
                     approximation_metrics_ref = approx_metrics(
-                                                               #fn=MakeScalar(model),
                                                                fn=ref_model.reference_fn(),
-                                                               ref_model=ref_model,
-                                                               #x=x,
                                                                x=x_raw_flat, 
                                                                U_dirs=u_H
                                                                )
                 if variant == "perXSVD" or variant == "streaming":
                     approximation_metrics_ref = approx_metrics_per_x(
-                                                               #fn=MakeScalar(model),
                                                                fn=ref_model.reference_fn(),
-                                                               ref_model=ref_model,
-                                                               #x=x,
                                                                x=x_raw_flat, 
                                                                dirs_per_x=u_H
                                                                )
@@ -224,7 +219,7 @@ def make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_wei
         # (your streaming sketching logic unchanged) -> dirs, dirs_per_x, Svals
         dirs = dirs_per_x = Svals = None
         if sketch and variant == "streaming":
-            x = batch[0]
+            x = batch["x"]
             sketch, refinement_directions, Svals = sketch.update_batch(x)
             dirs = refinement_directions.mean(axis=0)
             dirs_per_x = refinement_directions
@@ -243,15 +238,15 @@ def make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_wei
 
 def train(
     model: PyTree,
-    test_data: Tuple,
+    test_data: DifferentialData,
     optim: optax.GradientTransformation,
     n_epochs: int,
     n_batches_per_epoch: int,
     batch_size: int,
-    ref_model,
-    sketch,
-    variant,
-    k,
+    ref_model: ReferenceModel,
+    sketch: StreamingHessianSketch,
+    variant: str,
+    k: int,
     learnable_loss_weights: bool = True,
 ) -> PyTree:
     
@@ -302,19 +297,19 @@ def train(
             if test_data:
 
                 
-                test_pred_ys, test_pred_dys = vmap(jax.value_and_grad(weighted_model))(test_data[0])
-                y_error = jnp.sqrt(mse(test_pred_ys, test_data[1]))
-                dy_error = jnp.sqrt(mse(test_pred_dys, test_data[2]))
+                test_pred_ys, test_pred_dys = vmap(jax.value_and_grad(weighted_model))(test_data.x)
+                y_error = jnp.sqrt(mse(test_pred_ys, test_data.y))
+                dy_error = jnp.sqrt(mse(test_pred_dys, test_data.dy))
                     
                 # comparing to full hessian
-                test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_data[0])
-                test_pred_ddys = test_pred_ddys.reshape(test_data[3].shape)
-                ddy_error = jnp.sqrt(mse(test_pred_ddys, test_data[3]))
+                test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_data.x)
+                test_pred_ddys = test_pred_ddys.reshape(test_data.ddy.shape)
+                ddy_error = jnp.sqrt(mse(test_pred_ddys, test_data.ddy))
                 if variant == "3rdBatchSVD":
                     # comparing to full third derivative tensor
-                    test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_data[0])
-                    test_pred_dddys = test_pred_dddys.reshape(test_data[4].shape)
-                    dddy_error = jnp.sqrt(mse(test_pred_dddys, test_data[4]))
+                    test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_data.x)
+                    test_pred_dddys = test_pred_dddys.reshape(test_data.dddy.shape)
+                    dddy_error = jnp.sqrt(mse(test_pred_dddys, test_data.dddy))
                 else: dddy_error = .0
 
                 # 2nd order error in proj dirs
@@ -323,9 +318,9 @@ def train(
                     # comparing along directions used in loss
                     U = iteration_data["directions"]
 
-                    b = test_data[0].shape[0]
+                    b = test_data.x.shape[0]
                     d = ref_model.n_dims
-                    H_true = test_data[3].reshape(b, d, d)
+                    H_true = test_data.ddy.reshape(b, d, d)
                     H_pred = test_pred_ddys.reshape(b, d, d)
 
                     if variant == "batchSVD" or variant == "random":

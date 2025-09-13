@@ -172,7 +172,8 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, is_ref_fn, kappa=0.95):
     U_flat = safe_normalize_vectors(U_flat, axis=-1)   # L2 over the full vector
     #Qn, _  = jnp.linalg.qr(U_flat.T)           # (d, k) orthonormal columns
     #U_flat = Qn.T                               # (k, d) orthonormal directions
-    dirs   = U_flat.reshape(k, *ref_model.un_flattened_shape)   # (k, n, 2)
+    #dirs   = U_flat.reshape(k, *ref_model.un_flattened_shape)   # (k, n, 2)
+    dirs = U_flat
     return dirs, eval_dir, k_dir, S_var
 
 
@@ -225,8 +226,8 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, is_ref_fn, kappa=0.95
         U_flat = safe_normalize_vectors(U_flat, axis=-1)   # L2 over the full vector
         #Qn, _  = jnp.linalg.qr(U_flat.T)           # (d, k) orthonormal columns
         #U_flat = Qn.T                               # (k, d) orthonormal directions
-        dirs   = U_flat.reshape(k, *ref_model.un_flattened_shape)   # (k, n, 2)
-    
+        #dirs   = U_flat.reshape(k, *ref_model.un_flattened_shape)   # (k, n, 2)
+        dirs = U_flat
         return dirs, eval_dir, k_dir, S_var
 
     # vmap over batch

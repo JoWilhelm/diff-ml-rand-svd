@@ -4,17 +4,6 @@ import jax.numpy as jnp
 
 import diff_ml.losses.regression as losses
 
-## visualize generated data before trianig 
-#
-#def plot_generated_data():
-#    vis_dim = 0
-#    fig, axs = plt.subplots(1, 2)
-#
-#    plot_payoff_data(axs[0], X[:,vis_dim], Y[:,vis_dim], baskets[:, vis_dim], prices[:,vis_dim])
-#    plot_delta_data(axs[1], X[:,vis_dim], baskets[:, vis_dim], Z[:,vis_dim], deltas[:,vis_dim])
-#
-#    plt.show()
-
 
 
 
@@ -58,6 +47,9 @@ def plot_eval(pred_y, pred_dydx, pred_ddyddx, test_ds):
     #plt.show()
     now = datetime.datetime.now()
     fig.savefig(f'result/eval_ml_{now}.pdf', bbox_inches='tight')
+
+
+
 
 
 
