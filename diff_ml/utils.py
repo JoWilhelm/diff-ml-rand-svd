@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import equinox as eqx
 
 
-
 def normalize(x, x_mean, x_std):
     return (x - x_mean) / x_std
 
@@ -66,6 +65,8 @@ class MakeScalar(eqx.Module):
     def __call__(self, *args, **kwargs):
         out = self.model(*args, **kwargs)
         return jnp.reshape(out, ())
+    
+
     
 
 

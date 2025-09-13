@@ -1,25 +1,27 @@
-from typing import Tuple
-from jaxtyping import Array, Float, PRNGKeyArray
-
-
+"""
+TODO
+"""
 import jax
 import jax.numpy as jnp
-import equinox as eqx
-
-from typing_extensions import TypeAlias
-
-
-
-import jax.numpy as jnp
-
-Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 
 from diff_ml.utils import normalize
 from diff_ml.plotting import plot_3d_data
 
 
+# TODO typing stuff clean
+from typing import Tuple, Callable
+from jaxtyping import Array, Float, PRNGKeyArray
 
-class Analytic(eqx.Module):
+from reference_models.reference_model_class import ReferenceModel
+
+from diff_ml.typing import Data
+
+
+
+
+
+
+class Analytic(ReferenceModel):
 
     key: PRNGKeyArray
     
@@ -43,7 +45,7 @@ class Analytic(eqx.Module):
         object.__setattr__(self, "y_mean", y_mean)
     
 
-    def __init__(self, key, type, d, min_x, max_x):
+    def __init__(self, key: PRNGKeyArray, type: str, d: int, min_x: float, max_x: float):
 
         self.key = key
         self.type = type
@@ -52,9 +54,6 @@ class Analytic(eqx.Module):
         self.min_x = min_x
         self.max_x = max_x
 
-        ## Uniform[a,b] has mean (a+b)/2, var (b−a)**2/12
-        #self.x_mean = 0.5 * (min_x + self.max_x)
-        #self.x_std = jnp.sqrt((max_x - min_x) ** 2 / 12)
 
         m = 0.5 * (self.min_x + self.max_x)
         s = jnp.sqrt((self.max_x - self.min_x) ** 2 / 12)
@@ -70,20 +69,12 @@ class Analytic(eqx.Module):
     # d constant, no dependence on x
     # https://www.sfu.ca/~ssurjano/rothyp.html
     def rotated_hyper_ellipsoid(self, x):
-        """
-        x: array (..., d)
-        returns: array (...) of f(x) = sum_{i=1}^d sum_{j=1}^i x_j^2
-        """
         d = x.shape[-1]
-        # weights (d - i + 1) for i=1..d
-        weights = jnp.arange(d, 0, -1)  # shape (d,)
-        return jnp.sum(weights * x**2, axis=-1)
+        weights = jnp.arange(d, 0, -1)  # (d,)
+        return jnp.sum(weights * x**2, axis=-1).item()
     
 
-    
-
-    
-    # TODO Rastrigin function?
+    # Rastrigin function
     # d varying, only maginutude depends on x
     # https://en.wikipedia.org/wiki/
     def rastrigin(self, x, A: float = 10.0):
@@ -94,37 +85,34 @@ class Analytic(eqx.Module):
 
 
 
-    # TODO Rosenbrock function?
+    # Rosenbrock function
     # strong decay, dependece on x
     #https://en.wikipedia.org/wiki/Rosenbrock_function
     def rosenbrock(self, x):
         x_i   = x[..., :-1]
         x_ip1 = x[..., 1:]
-        return jnp.sum(100.0 * (x_ip1 - x_i**2)**2 + (1.0 - x_i)**2, axis=-1)
+        return jnp.sum(100.0 * (x_ip1 - x_i**2)**2 + (1.0 - x_i)**2, axis=-1).item()
 
 
 
 
-    # TODO Ackley function?
+    # Ackley function
     # moderate decay, dependence on x
     # https://www.sfu.ca/~ssurjano/ackley.html
-    def ackley(self, x, a: float = 20.0, b: float = 0.2, c: float = 2.0 * jnp.pi):
-        d = x.shape[-1]
+    def ackley(self, x, a: float = 20.0, b: float = 0.2, c: float = 2.0 * jnp.pi) -> float:
         # mean of squared components
         msq = jnp.mean(x**2, axis=-1)
-        term1 = -a * jnp.exp(-b * jnp.sqrt(msq + 1e-12))  # small eps for stability
-
+        term1 = -a * jnp.exp(-b * jnp.sqrt(msq + 1e-12)) 
         # mean of cos(c * x_i)
         mcos = jnp.mean(jnp.cos(c * x), axis=-1)
         term2 = -jnp.exp(mcos)
-
-        return term1 + term2 + a + jnp.e
-
+        return (term1 + term2 + a + jnp.e).item()
 
 
 
 
-    def type_fn(self):
+
+    def type_fn(self) -> Callable[[Float[Array, "d"]], float]:
         # Return a bound function (callable) that maps x -> scalar (...):
         if self.type == "RHE":
             return self.rotated_hyper_ellipsoid
@@ -139,12 +127,15 @@ class Analytic(eqx.Module):
 
 
 
-    def normalized_reference_fn(self, x_flat_normalized):
+
+    def normalized_wrapper(self, x_flat_normalized) -> float:
+
         # un-normalize x
         x_normalized_unflat = x_flat_normalized.reshape(self.un_flattened_shape)
         x_raw_unflat = x_normalized_unflat * self.x_std + self.x_mean
         x_flat_unnormalized = x_raw_unflat.reshape(self.n_dims)
         
+        # call in raw space
         y = self.type_fn()(x_flat_unnormalized)
         
         # re-normalize y
@@ -153,17 +144,19 @@ class Analytic(eqx.Module):
         return y_normalized    
 
 
-    def reference_fn(self, *args):
-        return self.normalized_reference_fn
+
+    def reference_fn(self) -> Callable[[Float[Array, "d"]], float]:
+        return self.normalized_wrapper
 
 
 
 
-    def get_test_set(self, n_samples):
-        return self.sample(self.key, n_samples, is_test=True)
+    def get_test_set(self, n_samples: int) -> Data:
+        return self.sample(self.key, n_samples, higher_order=True)
 
 
-    def sample(self, key, n_samples=256, is_test=False):    
+
+    def sample(self, key: PRNGKeyArray, n_samples=256, higher_order=False) -> Data:    
         
 
         x = jax.random.uniform(key, (n_samples, self.n_dims),minval=self.min_x, maxval=self.max_x)
@@ -173,7 +166,7 @@ class Analytic(eqx.Module):
         y, dydx = jax.vmap(value_and_grad_fn)(x)
         
 
-        if is_test: 
+        if higher_order: 
             # use test set y as uniform reference for future batches   
             self.set_y_mean(jnp.mean(y))
             self.set_y_std(jnp.std(y))      
@@ -184,12 +177,14 @@ class Analytic(eqx.Module):
         dydx_normalized = dydx * (self.x_std / self.y_std)#[None, ...]
         
 
-        if not is_test:
-            return x_normalized, y_normalized, dydx_normalized, None
-            #return x, y, dydx, None
+        if not higher_order:
+            return {
+                "x": x_normalized,
+                "y": y_normalized,
+                "dy": dydx_normalized,
+            }
 
-
-        if is_test:
+        if higher_order:
             
             # 2nd order
             ddyddx = jax.vmap(jax.hessian(self.type_fn()))(x)
@@ -211,8 +206,21 @@ class Analytic(eqx.Module):
 
 
 
-            return x_normalized, y_normalized, dydx_normalized, ddyddx_normalized, None#dddydddx_normalized
-            ##return x, y, dydx, ddyddx, None
+            #return x_normalized, y_normalized, dydx_normalized, ddyddx_normalized, None#dddydddx_normalized
+            return {
+                "x": x_normalized,
+                "y": y_normalized,
+                "dy": dydx_normalized,
+                "ddy": ddyddx_normalized,
+                #"dddy": dddydddx_normalized,
+            }
+
+
+
+
+
+
+
 
 
 

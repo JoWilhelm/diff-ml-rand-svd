@@ -46,6 +46,7 @@ def first_order_loss_fn(model, batch):
     
 
 
+
 @eqx.filter_jit
 def second_order_loss_fn(model: eqx.nn.MLP, batch, key, ref_model, dirs, dirs_per_x, Svals, variant, k) -> Float:
     

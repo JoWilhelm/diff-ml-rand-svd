@@ -1,11 +1,19 @@
+"""
+TODO
+"""
+import jax
+import jax.numpy as jnp
+import jax.random as jrandom
+
+# TODO typing stuff clean
+from jaxtyping import Array, Float, PRNGKeyArray
+
+
+
 from typing import Final
 from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
 
 
-import jax
-import jax.numpy as jnp
-import equinox as eqx
-import jax.random as jrandom
 
 from typing_extensions import TypeAlias
 import jax.scipy.stats as jstats
@@ -14,7 +22,7 @@ from functools import partial
 
 import jax.numpy as jnp
 
-Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
+#Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 from diff_ml.reference_models.payoff import EuropeanPayoff
 
 
@@ -176,7 +184,7 @@ class Bachelier:
         price = price.reshape((-1,))
         return price[0]
         
-    def reference_fn(self, *args):
+    def reference_fn(self):
         return self.analytic_basket_price_singe_x 
 
 
