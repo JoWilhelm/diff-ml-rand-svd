@@ -37,19 +37,19 @@ key, subkey = jrandom.split(key)
 
 
 
-#ref_model_mnist = MNIST_ref(
-#    key=key, 
-#    scale=0.5,
-#    target_class=9
-#)
-
-
-basket_dim = 2
-ref_model_heston = Heston(
-    key = key,
-    basket_dim=basket_dim,
-    basket_weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0),
+ref_model_mnist = MNIST_ref(
+    key=key, 
+    scale=0.5,
+    target_class=9
 )
+
+
+#basket_dim = 2
+#ref_model_heston = Heston(
+#    key = key,
+#    basket_dim=basket_dim,
+#    basket_weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0),
+#)
 
 #basket_dim = 7
 #ref_model_bachelier = Bachelier(
@@ -60,9 +60,9 @@ ref_model_heston = Heston(
 
 
 #ref_model = ref_model_bachelier
-ref_model = ref_model_heston
-#ref_model = ref_model_mnist
+#ref_model = ref_model_heston
 #ref_model = ref_model_analytic
+ref_model = ref_model_mnist
 
 
 

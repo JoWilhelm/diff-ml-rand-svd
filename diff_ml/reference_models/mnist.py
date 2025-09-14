@@ -26,15 +26,16 @@ import jax.numpy as jnp
 
 Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
 from diff_ml.utils import Range
+from diff_ml.typing import DifferentialData
+from diff_ml.reference_models.reference_model_class import ReferenceModel
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
-
-# ---------- Model (same as before) ----------
 class CNN(eqx.Module):
     
     convs: list
     linear: eqx.nn.Linear
-    #n_dims: int
-    #un_flattened_shape: tuple
+    
 
     def __init__(self, input_size: int, depth: int, base_channels: int, num_classes: int, key):
         keys = random.split(key, depth + 1)
@@ -46,7 +47,7 @@ class CNN(eqx.Module):
             convs.append(eqx.nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1, key=keys[i]))
             in_ch = out_ch
     
-        # compute final spatial size exactly
+        # compute final spatial size
         size = input_size
         for _ in range(depth):
             size = (size - 1) // 2 + 1
@@ -60,18 +61,19 @@ class CNN(eqx.Module):
         
     def __call__(self, x):
         # x: (H, W, 1)
-        x = jnp.transpose(x, (2, 0, 1))          # → (C,H,W)
+        x = jnp.transpose(x, (2, 0, 1))          # (C, H, W)
         for conv in self.convs:
             x = conv(x)
             x = jax.nn.silu(x)
-        x = x.reshape(-1)                       # flatten
+        x = x.reshape(-1)                       
         return self.linear(x)
 
 
 
-class MNIST_ref(eqx.Module):
+class MNIST_ref(ReferenceModel):
 
-    key: PRNGKeyArray
+    key_test: PRNGKeyArray
+    key_train: PRNGKeyArray
     
     train_imgs: Float[Array, "train_size H W 1"] 
     test_imgs: Float[Array, "test_size H W 1"]
@@ -81,40 +83,29 @@ class MNIST_ref(eqx.Module):
     cnn: CNN
     n_dims: int
     un_flattened_shape: tuple
-    scale: float = 1.0  # default scale for MNIST
-    target_class: int = 9  # default target class for MNIST
+    scale: float = 1.0  
+    target_class: int = 9  
 
     was_normalized: bool = False
     
     def __init__(self, key, scale, target_class=9):
-        self.key = key
+        self.key_test, self.key_train, key_cnn = jax.random.split(key, 3)
         self.scale = scale
         self.target_class = target_class
         input_size = int(28 * scale)
         self.n_dims = input_size * input_size
         self.un_flattened_shape = (input_size, input_size, 1)
 
-        self.key, cnn_key = random.split(self.key)
         self.cnn = CNN(
             input_size=int(28 * scale),
-            depth=3,  # number of convolutional layers
-            base_channels=32, # base number of channels in first conv layer
-            num_classes=10,  # MNIST has 10 classes
-            key=cnn_key
+            depth=3,  # n convolutional layers
+            base_channels=32, # m channels in first conv layer
+            num_classes=10,
+            key=key_cnn
         )
-        #self.cnn = CNN_downsampled(
-        #    input_size=int(28 * scale),
-        #    depth=3,
-        #    base_channels=32,
-        #    num_classes=10,
-        #    key=cnn_key,
-        #    anti_alias="avg",     
-        #    blur_size=3            
-        #)
 
-
-        # Train the CNN on MNIST
-        self.cnn = self.train(
+        # train the CNN
+        self.cnn = self.train_CNN(
             lr=1e-3, 
             batch_size=128, 
             epochs=3
@@ -141,17 +132,9 @@ class MNIST_ref(eqx.Module):
         train_lbls = train_lbls.astype(jnp.int32)
         test_lbls  = test_lbls .astype(jnp.int32)
 
-        #self.train_imgs = train_imgs
-        #self.train_lbls = train_lbls
-        #self.test_imgs  = test_imgs
-        #self.test_lbls  = test_lbls
         return train_imgs, train_lbls, test_imgs, test_lbls
 
-    #def loss_fn(self, model, xb, yb):
-    #    logits = jax.vmap(model)(xb)
-    #    onehot = jax.nn.one_hot(yb, logits.shape[-1])
-    #    return optax.softmax_cross_entropy(logits, onehot).mean()
-    
+
     # smoothed labels
     def loss_fn(self, model, xb, yb, eps=0.1):
         logits = jax.vmap(model)(xb)
@@ -164,11 +147,9 @@ class MNIST_ref(eqx.Module):
     def accuracy(self, model, xb, yb):
         preds = jnp.argmax(jax.vmap(model)(xb), axis=-1)
         return jnp.mean(preds == yb)
-      # TODO smooth loss
 
 
-
-    def train(self, lr, batch_size, epochs):
+    def train_CNN(self, lr, batch_size, epochs):
 
         train_imgs, train_lbls, test_imgs, test_lbls = self.load_mnist()
         self.train_imgs = train_imgs
@@ -194,7 +175,7 @@ class MNIST_ref(eqx.Module):
         for epoch in range(1, epochs+1):
             print(f"Epoch {epoch}/{epochs}")
             # a) shuffle train set
-            self.key, perm_key = random.split(self.key)
+            self.key_test, perm_key = random.split(self.key_test)
             perm = random.permutation(perm_key, num_train)
             train_imgs = train_imgs[perm]
             train_lbls = train_lbls[perm]
@@ -220,51 +201,61 @@ class MNIST_ref(eqx.Module):
 
     
 
-    def ref_fn(self, x_flat):
-        x = x_flat.reshape(self.un_flattened_shape)  # reshape to (H, W, 1)
+    def get_logit_for_target_digit(self, x_flat):
+        x = x_flat.reshape(self.un_flattened_shape)  # (H, W, 1)
         logits = self.cnn(x)
-        probs = logits / 3.0
+        top_class = jnp.argmax(logits)
+
+        probs = logits
         #probs = jax.nn.log_softmax(logits, axis=-1)
-        return probs[self.target_class]
-    
-    #def ref_fn(self, x_flat, T: float = 2.0):
-    #    x = x_flat.reshape(self.un_flattened_shape)
-    #    logits = self.cnn(x)
-    #    probs = jax.nn.softmax(logits / T, axis=-1)
-    #    return probs[self.target_class]
 
+        #top_is_not_target = (top_class - self.target_class) / (top_class - self.target_class + 1e-12)
+        return probs[self.target_class] - probs[top_class]#probs[top_class]*top_is_not_target
+  
     
 
-    def reference_fn(self, *args):
-        return self.ref_fn
+    def reference_fn(self):
+        return self.get_logit_for_target_digit
 
 
 
 
 
-    def get_test_set(self, n_samples):
+    def get_test_set(self, n_samples: int, order: int) -> DifferentialData:
         if n_samples > self.test_imgs.shape[0]:
             raise ValueError("Requested number of samples exceeds available test set size.")
+        
         # return a subset of the test set
         indices = jnp.arange(self.test_imgs.shape[0])
-        perm = random.permutation(self.key, indices)[:n_samples]
+        perm = random.permutation(self.key_test, indices)[:n_samples]
 
         x = self.test_imgs[perm]
-        x_flat = x.reshape(n_samples, -1)  # flatten to (n_samples, n_dims)
+        x_flat = x.reshape(n_samples, -1)  # (n_samples, n_dims)
         
-        y_and_dy_fn = jax.value_and_grad(self.ref_fn)
-        y, dydx= jax.vmap(y_and_dy_fn)(x_flat)  # y: (n_samples,), dy: (n_samples, n_dims)
+        y_and_dy_fn = jax.value_and_grad(self.reference_fn())
+        y, dydx= jax.vmap(y_and_dy_fn)(x_flat)
         #print("y shape: ", y.shape)
         #print("dy shape: ", dy.shape)
 
-        ddyddx = jax.vmap(jax.hessian(self.ref_fn))(x_flat)
-        #print("H_full shape: ", H_full.shape)
+        ddy = None
+        dddy = None
+        if order >= 2:
+            ddy = jax.vmap(jax.hessian(self.reference_fn()))(x_flat)
+        if order >= 3:
+            dddy = jax.vmap(jax.jacfwd(jax.hessian(self.reference_fn())))(x_flat) 
         
-        return x_flat, y, dydx, ddyddx  
+        return DifferentialData(
+            order = order,
+            x = x_flat,
+            y = y,
+            dy = dydx,
+            ddy = ddy,
+            dddy = dddy
+        ) 
     
 
 
-    def sample(self, key, n_samples):
+    def sample(self, key: PRNGKeyArray, n_samples: int, order: int = 1) -> DifferentialData:
 
         if n_samples > self.train_imgs.shape[0]:
             raise ValueError("Requested number of samples exceeds available train set size.")
@@ -276,9 +267,64 @@ class MNIST_ref(eqx.Module):
         x = self.train_imgs[perm]
         x_flat = x.reshape(n_samples, -1)  # flatten to (n_samples, n_dims)
         
-        y_and_dy_fn = jax.value_and_grad(self.ref_fn)
+        y_and_dy_fn = jax.value_and_grad(self.reference_fn())
         y, dydx= jax.vmap(y_and_dy_fn)(x_flat)  # y: (n_samples,), dy: (n_samples, n_dims)
         
-        return x_flat, y, dydx, None
+        return DifferentialData(
+            order = order,
+            x = x_flat,
+            y = y,
+            dy = dydx
+        )
     
+
+
+
+
+
+
+    def plot_img_colored(self, img, figsize=(3,3), interpolation="nearest"):
+    
+        if len(img.shape) == 1:
+            side_length = int(jnp.sqrt(img.shape[0]))
+            arr = img.reshape(side_length, side_length)
+        #else:
+        #    arr = jnp.squeeze(img)
+
+
+
+        # create a 3‐color colormap: red at low end, grey at zero, green at high end
+        cmap = mcolors.LinearSegmentedColormap.from_list(
+            "red_grey_green", 
+            [("red"), ("lightgrey"), ("green")],
+            N=256
+        )
+        # center the color scaling at zero
+        norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+
+        plt.figure(figsize=figsize)
+        plt.imshow(arr, cmap=cmap, norm=norm, interpolation=interpolation)
+        plt.axis("off")
+        plt.show()
+
+
+
+
+
+
+    def visualize_data(self, dataset: DifferentialData, name: str):
+        # TODO
+        print("shapes:")
+        print("x shape: ", dataset.x.shape)
+        print("y shape: ", dataset.y.shape)
+        print("dydx shape: ", "-" if dataset.dy == None  else dataset.dy.shape)
+        print("ddyddx shape: ", "-" if dataset.ddy == None  else dataset.ddy.shape)
+        print("dddydddx shape: ", "-" if dataset.dddy == None  else dataset.dddy.shape)
+
+        # for img 0 plot dy
+        dy0 = dataset.dy[0]
+        self.plot_img_colored(dy0)
+        
+
+
 

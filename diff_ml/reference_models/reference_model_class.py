@@ -21,7 +21,7 @@ class ReferenceModel(ABC):
         pass
 
     @abstractmethod
-    def sample(self, key: PRNGKeyArray, n_samples: int, order: int = 1) -> DifferentialData: 
+    def sample(self, key: PRNGKeyArray, n_samples: int, order: int) -> DifferentialData: 
         """
         TODO
         """
