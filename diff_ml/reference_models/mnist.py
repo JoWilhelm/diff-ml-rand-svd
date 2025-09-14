@@ -34,30 +34,32 @@ import matplotlib.colors as mcolors
 class CNN(eqx.Module):
     
     convs: list
+    #pools: list
     linear: eqx.nn.Linear
     
 
     def __init__(self, input_size: int, depth: int, base_channels: int, num_classes: int, key):
         keys = random.split(key, depth + 1)
-        convs = []
+        self.convs = []
+        #self.pools = []
         in_ch = 1
-    
+        
         for i in range(depth):
             out_ch = base_channels * (2**i)
-            convs.append(eqx.nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1, key=keys[i]))
+            self.convs.append(eqx.nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1, key=keys[i]))
+            #self.pools.append(eqx.nn.AvgPool2d(kernel_size=2, stride=2))
             in_ch = out_ch
-    
+
+
         # compute final spatial size
         size = input_size
         for _ in range(depth):
             size = (size - 1) // 2 + 1
+            #size = size // 2 
         final_size = size
     
     
-    
-        self.convs = convs
         self.linear = eqx.nn.Linear(in_ch * final_size * final_size, num_classes, key=keys[-1])
-        #self.input_size = input_size
         
     def __call__(self, x):
         # x: (H, W, 1)
@@ -65,6 +67,7 @@ class CNN(eqx.Module):
         for conv in self.convs:
             x = conv(x)
             x = jax.nn.silu(x)
+            #x = pool(x)
         x = x.reshape(-1)                       
         return self.linear(x)
 
@@ -206,11 +209,11 @@ class MNIST_ref(ReferenceModel):
         logits = self.cnn(x)
         top_class = jnp.argmax(logits)
 
-        probs = logits
+        probs = logits / 3
         #probs = jax.nn.log_softmax(logits, axis=-1)
 
-        #top_is_not_target = (top_class - self.target_class) / (top_class - self.target_class + 1e-12)
-        return probs[self.target_class] - probs[top_class]#probs[top_class]*top_is_not_target
+        top_is_not_target = (top_class - self.target_class) / (top_class - self.target_class + 1e-12)
+        return probs[self.target_class] - probs[top_class]*top_is_not_target
   
     
 
