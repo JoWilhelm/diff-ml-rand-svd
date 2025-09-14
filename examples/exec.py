@@ -44,33 +44,23 @@ key, subkey = jrandom.split(key)
 #)
 
 
-#basket_dim = 2
-#ref_model_heston = Heston(
-#    key = key,
-#    basket_dim=basket_dim,
-#    basket_weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0),
-#    spot_range = Range(50.0, 150.0),
-#    vol_range = Range(0.01, 0.1),
-#    mc_time_steps=1024,
-#    K= 100.0,
-#    r = 0.00,
-#    T = 1.0,
-#    rho = -0.3,
-#    kappa = 1.0,
-#    theta = 0.09,
-#    xi = 1.0
-#)
-
-basket_dim = 7
-ref_model_bachelier = Bachelier(
-    key,
-    basket_dim=basket_dim, 
-    weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0)
+basket_dim = 2
+ref_model_heston = Heston(
+    key = key,
+    basket_dim=basket_dim,
+    basket_weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0),
 )
 
+#basket_dim = 7
+#ref_model_bachelier = Bachelier(
+#    key,
+#    basket_dim=basket_dim, 
+#    weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0)
+#)
 
-ref_model = ref_model_bachelier
-#ref_model = ref_model_heston
+
+#ref_model = ref_model_bachelier
+ref_model = ref_model_heston
 #ref_model = ref_model_mnist
 #ref_model = ref_model_analytic
 
@@ -91,7 +81,7 @@ print("x:", test_set.x.shape)
 print("y:", test_set.y.shape)
 print("dydx:", test_set.dy.shape)
 print("ddyddx:", test_set.ddy.shape)
-print("dddydddx:", "-" if test_set.dddy == None  else test_set.dddy.shape)
+print("dddydddx:", "-" if test_set.dddy == None else test_set.dddy.shape)
 
 
 

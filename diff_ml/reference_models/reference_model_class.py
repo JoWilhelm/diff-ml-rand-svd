@@ -8,12 +8,13 @@ from diff_ml.typing import DifferentialData, Scalar
 class ReferenceModel(ABC):
 
 
-    def __init__(self, key: PRNGKeyArray, n_dims: int):
-        self.key = key
+    def __init__(self, key_test: PRNGKeyArray, key_train: PRNGKeyArray, n_dims: int):
+        self.key_test = key_test
+        self.key_train = key_train
         self.n_dims = n_dims
         
     @abstractmethod
-    def get_test_set(self, n_samples: int, order: int = 2) -> DifferentialData: 
+    def get_test_set(self, n_samples: int, order: int) -> DifferentialData: 
         """
         TODO
         """

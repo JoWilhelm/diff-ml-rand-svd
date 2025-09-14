@@ -49,7 +49,8 @@ class Bachelier(ReferenceModel):
         vol_basket: the volatility of the basket. Used to normalize the volatilities.
     """
 
-    key: PRNGKeyArray
+    key_test: PRNGKeyArray
+    key_train: PRNGKeyArray
     n_dims: Final[int]
     basket_dim: Final[int]
     weights: Float[Array, "basket_dim"]
@@ -68,7 +69,7 @@ class Bachelier(ReferenceModel):
             val = f"Mismatch in number of dimensions ({basket_dim}) and number of weights ({weights}) given."
             raise ValueError(val)
 
-        self.key = key
+        self.key_test, self.key_train = jax.random.split(key, 2)
         self.basket_dim = basket_dim
         self.un_flattened_shape = [basket_dim]
 
@@ -196,7 +197,7 @@ class Bachelier(ReferenceModel):
 
 
 
-    def get_test_set(self, n_samples, order=2) -> DifferentialData:
+    def get_test_set(self, n_samples:int, order:int) -> DifferentialData:
         return self.analytic(n_samples, order=order)
 
 
@@ -210,7 +211,7 @@ class Bachelier(ReferenceModel):
         adj_upper = 1.0 + (maxval - 1.0) * adj
 
         # draw random spots within range
-        self.key, subkey = jrandom.split(self.key)
+        self.key_test, subkey = jrandom.split(self.key_test)
         spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
         
         baskets = jnp.dot(spots, self.weights).reshape((-1, 1))

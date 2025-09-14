@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from diff_ml.utils import normalize
-from diff_ml.plotting import plot_3d_data
+from diff_ml.plotting import plot_3d_differential_data
 
 from typing import Callable
 from jaxtyping import Array, Float, PRNGKeyArray
@@ -21,7 +21,8 @@ from diff_ml.typing import DifferentialData, Scalar
 
 class Analytic(ReferenceModel):
 
-    key: PRNGKeyArray
+    key_test: PRNGKeyArray
+    key_train: PRNGKeyArray
     n_dims: int
 
     type: str
@@ -38,7 +39,7 @@ class Analytic(ReferenceModel):
 
     def __init__(self, key: PRNGKeyArray, type: str, d: int, min_x: float, max_x: float):
 
-        self.key, y_sample_key = jax.random.split(key, 2)
+        self.key_test, self.key_train, y_sample_key = jax.random.split(key, 3)
 
         self.type = type
         self.n_dims = d
@@ -130,8 +131,8 @@ class Analytic(ReferenceModel):
 
 
 
-    def get_test_set(self, n_samples: int, order: int=3) -> DifferentialData:
-        return self.sample(self.key, n_samples, order=order)
+    def get_test_set(self, n_samples: int, order: int) -> DifferentialData:
+        return self.sample(self.key_test, n_samples, order=order)
 
 
 
@@ -193,45 +194,12 @@ class Analytic(ReferenceModel):
 
 
 
-
     def visualize_data(self, dataset: DifferentialData, name: str):
-            # visulaize the test set
-            print("shapes:")
-            print("x shape: ", dataset.x.shape)
-            print("y shape: ", dataset.y.shape)
-            print("dydx shape: ", dataset.dy.shape if dataset.dy else "-")
-            print("ddyddx shape: ", dataset.ddy.shape if dataset.ddy else "-")
-            print("dddydddx shape: ", dataset.dddy.shape if dataset.dddy else "-")
-
-            # plot only over first two input dimensions
-            xs = dataset.x[..., 0]
-            ys = dataset.x[..., 1]
-
-            # value
-            plot_3d_data(xs, ys, dataset.y, x1_label="x1", x2_label="x2", y_label="y", title=f"{name} target\ny")
-
-            # 1st order
-            if dataset.dy:
-                plot_3d_data(xs, ys, dataset.dy[:, 0], x1_label="x1", x2_label="x2", y_label="dydx1", title=f"{name}\ndydx1")
-                plot_3d_data(xs, ys, dataset.dy[:, 1], x1_label="x1", x2_label="x2", y_label="dydx1", title=f"{name}\ndydx2")
-
-            # 2nd order
-            if dataset.ddy:
-                plot_3d_data(xs, ys, dataset.ddy[:, 0, 0], x1_label="x1", x2_label="x2", y_label="ddyddx11", title=f"{name}\nddyddx11")
-                plot_3d_data(xs, ys, dataset.ddy[:, 0, 1], x1_label="x1", x2_label="x2", y_label="ddyddx12", title=f"{name}\nddyddx12")
-                plot_3d_data(xs, ys, dataset.ddy[:, 1, 0], x1_label="x1", x2_label="x2", y_label="ddyddx21", title=f"{name}\nddyddx21")
-                plot_3d_data(xs, ys, dataset.ddy[:, 1, 1], x1_label="x1", x2_label="x2", y_label="ddyddx22", title=f"{name}\nddyddx22")
-
-            # 3rd order
-            if dataset.dddy:
-                plot_3d_data(xs, ys, dataset.dddy[:, 0, 0, 0], x1_label="x1", x2_label="x2", y_label="dddydddx111", title=f"{name}\ndddydddx111")
-                plot_3d_data(xs, ys, dataset.dddy[:, 0, 0, 1], x1_label="x1", x2_label="x2", y_label="dddydddx112", title=f"{name}\ndddydddx112")
-                plot_3d_data(xs, ys, dataset.dddy[:, 0, 1, 0], x1_label="x1", x2_label="x2", y_label="dddydddx121", title=f"{name}\ndddydddx121")
-                plot_3d_data(xs, ys, dataset.dddy[:, 0, 1, 1], x1_label="x1", x2_label="x2", y_label="dddydddx122", title=f"{name}\ndddydddx122")
-                plot_3d_data(xs, ys, dataset.dddy[:, 1, 0, 0], x1_label="x1", x2_label="x2", y_label="dddydddx211", title=f"{name}\ndddydddx211")
-                plot_3d_data(xs, ys, dataset.dddy[:, 1, 0, 1], x1_label="x1", x2_label="x2", y_label="dddydddx212", title=f"{name}\ndddydddx212")
-                plot_3d_data(xs, ys, dataset.dddy[:, 1, 1, 0], x1_label="x1", x2_label="x2", y_label="dddydddx221", title=f"{name}\ndddydddx221")
-                plot_3d_data(xs, ys, dataset.dddy[:, 1, 1, 1], x1_label="x1", x2_label="x2", y_label="dddydddx222", title=f"{name}\ndddydddx222")
-
-
-        
+        plot_3d_differential_data(
+            dataset=dataset,
+            name=name,
+            x1_index=0,
+            x2_index=1,
+            x1_name="x1",
+            x2_name="x2"
+        )

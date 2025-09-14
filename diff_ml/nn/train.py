@@ -263,7 +263,7 @@ def train(
     n_steps = n_epochs * n_batches_per_epoch
     print(f"Training for {n_epochs} epochs with {n_batches_per_epoch} batches per epoch and batch size {batch_size}.")
     
-    keys = jrandom.split(ref_model.key, n_steps)
+    keys = jrandom.split(ref_model.key_train, n_steps)
 
     #epoch_percent = 0
     iteration_datas = []
