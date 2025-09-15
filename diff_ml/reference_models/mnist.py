@@ -177,19 +177,17 @@ class MNIST_ref(ReferenceModel):
         print("Training reference model...")
         for epoch in range(1, epochs+1):
             print(f"Epoch {epoch}/{epochs}")
-            # a) shuffle train set
+            # shuffle train set
             self.key_test, perm_key = random.split(self.key_test)
             perm = random.permutation(perm_key, num_train)
             train_imgs = train_imgs[perm]
             train_lbls = train_lbls[perm]
-
-            # b) training by slicing
+            # train
             for i in range(0, num_train, batch_size):
                 xb = train_imgs[i:i+batch_size]
                 yb = train_lbls[i:i+batch_size]
                 model, opt_state = train_step(model, opt_state, xb, yb)
-
-            # c) evaluation
+            # evaluate
             accs = []
             for i in range(0, num_test, batch_size):
                 xb = test_imgs[i:i+batch_size]
@@ -197,7 +195,7 @@ class MNIST_ref(ReferenceModel):
                 accs.append(self.accuracy(model, xb, yb))
             test_acc = jnp.stack(accs).mean()
 
-            print(f" → test accuracy: {test_acc*100:.2f}%")
+            print(f" -> test accuracy: {test_acc*100:.2f}%")
 
         return model
 
@@ -282,19 +280,28 @@ class MNIST_ref(ReferenceModel):
     
 
 
-
-
-
-
-    def plot_img_colored(self, img, figsize=(3,3), interpolation="nearest"):
     
-        if len(img.shape) == 1:
-            side_length = int(jnp.sqrt(img.shape[0]))
-            arr = img.reshape(side_length, side_length)
-        #else:
-        #    arr = jnp.squeeze(img)
 
 
+
+
+
+    def plot_digit_bw(self, img_arr):
+
+        side_length = int(jnp.sqrt(img_arr.shape[0]))
+        gray = img_arr.reshape(side_length, side_length)
+
+        plt.figure(figsize=(3,3))
+        plt.imshow(gray, cmap="gray", interpolation="nearest")
+        plt.axis("off")           # turn off axis ticks
+        plt.show()
+
+
+
+    def plot_dy_color(self, img_arr, figsize=(3,3)):
+
+        side_length = int(jnp.sqrt(img_arr.shape[0]))
+        arr = img_arr.reshape(side_length, side_length)
 
         # create a 3‐color colormap: red at low end, grey at zero, green at high end
         cmap = mcolors.LinearSegmentedColormap.from_list(
@@ -305,8 +312,31 @@ class MNIST_ref(ReferenceModel):
         # center the color scaling at zero
         norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
 
+
         plt.figure(figsize=figsize)
-        plt.imshow(arr, cmap=cmap, norm=norm, interpolation=interpolation)
+        plt.imshow(arr, cmap=cmap, norm=norm, interpolation="nearest")
+        plt.axis("off")
+        plt.show()
+
+
+
+    def plot_digit_with_changes(self, img_arr, dy, alpha=0.6, figsize=(3,3)):
+
+        side_length = int(jnp.sqrt(img_arr.shape[0]))
+        base = img_arr.reshape(side_length, side_length)
+        delta = dy.reshape(side_length, side_length)
+
+        # red–grey–green colormap for changes
+        cmap = mcolors.LinearSegmentedColormap.from_list(
+            "red_grey_green", ["red", "lightgrey", "green"], N=256
+        )
+        norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+
+        plt.figure(figsize=figsize)
+        # plot base digit in grayscale
+        plt.imshow(base, cmap="gray", interpolation="nearest")
+        # overlay changes
+        plt.imshow(delta, cmap=cmap, norm=norm, interpolation="nearest", alpha=alpha)
         plt.axis("off")
         plt.show()
 
@@ -324,9 +354,45 @@ class MNIST_ref(ReferenceModel):
         print("ddyddx shape: ", "-" if dataset.ddy == None  else dataset.ddy.shape)
         print("dddydddx shape: ", "-" if dataset.dddy == None  else dataset.dddy.shape)
 
-        # for img 0 plot dy
-        dy0 = dataset.dy[0]
-        self.plot_img_colored(dy0)
+
+
+
+        def norm(arr):
+            return arr / jnp.max(jnp.abs(arr))
+
+        
+        # get CNN labels for all x
+        x_raw = dataset.x.reshape(dataset.x.shape[0], *self.un_flattened_shape)
+        preds = jax.vmap(self.cnn)(x_raw)
+        labels = jnp.argmax(preds, axis=-1)
+        
+        avg_eight = jnp.mean(dataset.x[labels == 8], axis=0)
+        avg_zero = jnp.mean(dataset.x[labels == 0], axis=0)
+        mask = (avg_eight + avg_zero) / 2
+        mask = jnp.minimum(1, mask*10)
+        #print("mask")
+        #self.plot_digit_bw(mask)
+        print("")
+        for i in range(10):
+            i_digits = dataset.x[labels == i]
+            avg_i = jnp.mean(i_digits, axis=0)
+            #print("avg", i)
+            #plot_digit_bw(avg_i)
+
+            i_dys = dataset.dy[labels == i]
+            avg_dy = jnp.mean(i_dys, axis=0)
+            avg_dy = norm(avg_dy*mask)
+            #print("avg dy", i)
+            #plot_dy_color(avg_dy)
+
+            
+            print(f"{name}\navg dy to digit {i} (masked)")
+            self.plot_digit_with_changes(avg_i, avg_dy)
+
+            applied = avg_i + avg_dy
+            applied = jnp.maximum(0, jnp.minimum(1, applied))
+            print(f"{name}\navg dy applied to avg digit {i}")
+            self.plot_digit_bw(applied)
         
 
 

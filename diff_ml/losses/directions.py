@@ -1,8 +1,16 @@
 from jaxtyping import PRNGKeyArray
 from typing import Callable
 from diff_ml.utils import generate_random_vectors, safe_normalize_vectors
-from diff_ml.hvps_and_t3vps import hvp, hvp_batch, tvp_batch
+from diff_ml.ad import hvp_batch, t3vp_batch
+import jax
+import jax.numpy as jnp
+from jax import random
+from dataclasses import replace 
+import equinox as eqx
 
+
+
+# TODO incorporate PCA directions in train and eval loop
 # apply PCA to first-order gradients of predictions
 def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
     
@@ -19,8 +27,7 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
     #return .0
 
     if normalize:
-        pca_directions = normalize_vectors(pca_directions)
-
+        pca_directions = safe_normalize_vectors(pca_directions, axis=-1)
 
     # select PCs that account for kappa% of variance
     # singular values scaled to represent % of variance explained.
@@ -38,197 +45,181 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 
 
 
-def hvp_power_iterated_sketch(f, x, sketch_directions, q):
-    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
-    Y = jnp.mean(Y, axis=0)  # (k, dim)
-    for _ in range(q):
-        
-        # --- Re-orthogonalize directions ---
-        Y, _ = jnp.linalg.qr(Y.T)  # Y.T: (dim, k)
-        Y = Y.T  # shape back to (k, dim)
-
-        
-        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
-        Y = jnp.mean(Y, axis=0)  # (k, dim)
-        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
-        Y = jnp.mean(Y, axis=0)  # (k, dim)
-
-    return Y
-
-
-
-# old
-def get_rand_SVD_directions(f, x, k, key, kappa=0.95, normalize=True):
-
-    # TODO first rand svd experimental implementation
-    dim = x.shape[-1]
-    sketch_directions = generate_random_vectors(k, dim, key) # (k, dim)
-
-    # Step 1: build sketch Y = H @ sketch_directions
-    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
-    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
-    # TODO understand if averaging over batch_size is the correct approach
-    Y = jnp.mean(Y, axis=0)  # (k, dim)
-    Y = Y.T # (dim, k)
-    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
-
-    ## power iterated version of step 1
-    #Y = hvp_power_iterated_sketch(f=f, x=x, sketch_directions=sketch_directions, q=3) # (k, dim)
-    #Y = Y.T # (dim, k)
-    
-    
-    
-    # Step 2: orthonormalize Y
-    # TODO breaks when k > dim, which I guess makes sense
-    Q, _ = jnp.linalg.qr(Y) # (dim, k)  
-    #jax.debug.print("Q.shape {shape}", shape=Q.shape)
-
-    # Step 3: each row of B is H @ q_i
-    B_rows = hvp_batch(f=f, inputs=x, directions=Q.T) # (batch_size, k, dim)
-    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)  
-    # TODO understand if averaging over batch_size is the correct approach
-    B_rows = jnp.mean(B_rows, axis=0) # (k, dim)
-    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)
-    B = jnp.stack(B_rows, axis=0) # (k, dim)
-    #jax.debug.print("B.shape {shape}", shape=B.shape)
-
-    # Step 4: SVD on B
-    U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
-    #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)
+#def hvp_power_iterated_sketch(f, x, sketch_directions, q):
+#    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
+#    Y = jnp.mean(Y, axis=0)  # (k, dim)
+#    for _ in range(q):
+#        
+#        # --- Re-orthogonalize directions ---
+#        Y, _ = jnp.linalg.qr(Y.T)  # Y.T: (dim, k)
+#        Y = Y.T  # shape back to (k, dim)
+#
+#        
+#        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+#        Y = jnp.mean(Y, axis=0)  # (k, dim)
+#        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+#        Y = jnp.mean(Y, axis=0)  # (k, dim)
+#
+#    return Y
 
 
 
-    # Step 5: Lift back U = Q @ U_tilde
-    U = Q @ U_tilde  # (dim, k)
-    #jax.debug.print("U.shape {shape}", shape=U.shape)
-    #jax.debug.print("")
-
-    S_var = S**2 / jnp.sum(S**2)
-    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
-    k_dir = jnp.sum(eval_dir) # number of principal components used
-    
-
-    return U.T, eval_dir, k_dir
-
-
+## old
+#def get_rand_SVD_directions(f, x, k, key, kappa=0.95, normalize=True):
+#
+#    # TODO first rand svd experimental implementation
+#    dim = x.shape[-1]
+#    sketch_directions = generate_random_vectors(k, dim, key) # (k, dim)
+#
+#    # Step 1: build sketch Y = H @ sketch_directions
+#    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
+#    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
+#    # TODO understand if averaging over batch_size is the correct approach
+#    Y = jnp.mean(Y, axis=0)  # (k, dim)
+#    Y = Y.T # (dim, k)
+#    #jax.debug.print("Y.shape {shape}", shape=Y.shape)
+#
+#    ## power iterated version of step 1
+#    #Y = hvp_power_iterated_sketch(f=f, x=x, sketch_directions=sketch_directions, q=3) # (k, dim)
+#    #Y = Y.T # (dim, k)
+#    
+#    
+#    
+#    # Step 2: orthonormalize Y
+#    # TODO breaks when k > dim, which I guess makes sense
+#    Q, _ = jnp.linalg.qr(Y) # (dim, k)  
+#    #jax.debug.print("Q.shape {shape}", shape=Q.shape)
+#
+#    # Step 3: each row of B is H @ q_i
+#    B_rows = hvp_batch(f=f, inputs=x, directions=Q.T) # (batch_size, k, dim)
+#    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)  
+#    # TODO understand if averaging over batch_size is the correct approach
+#    B_rows = jnp.mean(B_rows, axis=0) # (k, dim)
+#    #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)
+#    B = jnp.stack(B_rows, axis=0) # (k, dim)
+#    #jax.debug.print("B.shape {shape}", shape=B.shape)
+#
+#    # Step 4: SVD on B
+#    U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
+#    #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)
+#
+#
+#
+#    # Step 5: Lift back U = Q @ U_tilde
+#    U = Q @ U_tilde  # (dim, k)
+#    #jax.debug.print("U.shape {shape}", shape=U.shape)
+#    #jax.debug.print("")
+#
+#    S_var = S**2 / jnp.sum(S**2)
+#    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
+#    k_dir = jnp.sum(eval_dir) # number of principal components used
+#    
+#
+#    return U.T, eval_dir, k_dir
 
 
 
 
 
-# TODO clean up
+
 #new 
-def get_rand_SVD_directions(ref_model, f, x, k, key, is_ref_fn, kappa=0.95):
+def get_rand_SVD_directions(ref_model, f, x, k, key, kappa=0.95):
+    """
+    TODO
+    Randomized SVD to get k top singular directions of the Hessian of f averaged over points x.
+    """
 
-    
     sketch_directions = generate_random_vectors(shape=(k, ref_model.n_dims), key=key, normalize=True)
-    
    
-    ## Step 1: build sketch Y = H @ sketch_directions
+    # build sketch Y = H @ sketch_directions
     Y = hvp_batch(
         f=f,
         inputs=x, 
         directions=sketch_directions
-    ) # (batch, k, 2*basket)
-   
-    Y = jnp.mean(Y, axis=0)  # (k, dim)
-    Y = Y.T # (2*basket, k)    
+    ) # (b, k, d)
+    Y = jnp.mean(Y, axis=0)  # (k, d)
+    Y = Y.T # (d, k)    
     
-    # Step 2: orthonormalize Y
-    Q, _ = jnp.linalg.qr(Y) # (*2basket, k) 
+    # orthonormalize Y
+    Q, _ = jnp.linalg.qr(Y) # (d, k) 
 
-
-
-    ## Step 3: each row of B is H @ q_i
+    # project via HVPs
+    # each row of B is H @ q_i
     B_rows = hvp_batch(
         f=f,
         inputs=x, 
         directions=Q.T
-    ) # (batch, k, in_dim)
+    ) # (b, k, d)
     #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)
-
-    B_rows = jnp.mean(B_rows, axis=0)  # (k, in_dimm)
-    B = jnp.stack(B_rows, axis=0) # (k, in_dimm)
+    B_rows = jnp.mean(B_rows, axis=0)  # (k, d)
+    B = jnp.stack(B_rows, axis=0) # (k, d)
     #jax.debug.print("B.shape {shape}", shape=B.shape)
     
-
-    # Step 4: SVD on B
+    # SVD on B
     U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
     #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)  
 
-
-    # Step 5: Lift back U = Q @ U_tilde
-    U = Q @ U_tilde  # (2*basket, k)
-    U = U.T # (k, 2*basket)
+    # lift back
+    U = Q @ U_tilde  # (d, k)
+    U = U.T # (k, d)
     #jax.debug.print("U.shape {shape}", shape=U.shape)
 
-    
     S_var = S**2 / jnp.sum(S**2)
-    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make use that at least the first principal component is always actively used
-    k_dir = jnp.sum(eval_dir) # number of principal components used
+    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make sure that at least the first principal component is always actively used
+    k_dir = jnp.sum(eval_dir) # number of principal components used to explain kappa% of variance
     
+    dirs = safe_normalize_vectors(U, axis=-1) # (k, d) take rows as directions
 
-    U_flat = U                 # (k, d) take rows as directions
-    U_flat = safe_normalize_vectors(U_flat, axis=-1)   # L2 over the full vector
-    #Qn, _  = jnp.linalg.qr(U_flat.T)           # (d, k) orthonormal columns
-    #U_flat = Qn.T                               # (k, d) orthonormal directions
-    #dirs   = U_flat.reshape(k, *ref_model.un_flattened_shape)   # (k, n, 2)
-    dirs = U_flat
     return dirs, eval_dir, k_dir, S_var
 
 
 
 
-def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, is_ref_fn, kappa=0.95):
-    
-    b, d = X.shape
-    # split keys per sample
+
+def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, kappa=0.95):
+    """
+    TODO
+    Randomized SVD to get k top singular directions of the Hessian of f for each point in X.
+    """
+
+    b = X.shape[0]
     keys = jax.random.split(key, b)
 
     def single_sample_rand_svd(x, subkey):
-        # 1) sketch directions (omega) for this sample
-        omega = generate_random_vectors(shape=(k, ref_model.n_dims), key=subkey, normalize=True)  # (k, d) 
+
+        sketch_directions = generate_random_vectors(shape=(k, ref_model.n_dims), key=subkey, normalize=True)  # (k, d) 
    
-
-        # 2) form Y = H(x) @ Ω^T via HVPs: directions are rows of Ω
-        #    hvp_batch expects directions shape (k, d) and returns (1, k, d)
-        Y = hvp_batch(f, x[None, :], omega)  # (1, k, d)
+        # build sketch Y = H @ sketch_directions
+        # for a single x hvp_batch returns (1, k, d)
+        Y = hvp_batch(f, x[None, :], sketch_directions)  # (1, k, d)
         Y = Y[0]  # (k, d)
+        Y = Y.T   # (d, k)
 
-        # 3) orthonormalize Y^T to get Q: shape (d, k)
-        Q, _ = jnp.linalg.qr(Y.T)  # (d, k)
+        # orthonormalize Y
+        Q, _ = jnp.linalg.qr(Y)  # (d, k)
 
-        # 4) form B = H(x) @ Q via HVPs: need hvp on each column of Q
-        HQ = jnp.stack([hvp(f, x, Q[:, i]) for i in range(k)], axis=0)  # (k, d)
+        # project
+        B_rows = hvp_batch(
+            f=f, 
+            inputs=x[None, :],
+            directions= Q.T
+        )[0]  # (k, d)
+        B = jnp.stack(B_rows, axis=0) # (k, d)
 
-        # 5) small projected matrix B = Q^T H Q  ∈ ℝ^{k×k}
-        B = Q.T @ HQ.T  # (k, k)
+        # SVD on B
+        U_tilde, S, _ = jnp.linalg.svd(B, full_matrices=False)  # (k,k)
 
-        # 6) SVD on B
-        U_tilde, S, _ = jnp.linalg.svd(B, full_matrices=False)  # (k,k), (k,), (k,k)
-
-        # 7) lift back: U_loc = Q @ U_tilde[:, :k] => (d, k)
-        U_loc = Q @ U_tilde  # (d, k)
-
-        # we want output shape (k, d) with directions as rows
-        U = U_loc.T  # (k, d)
-
-        # 8) spectrum metrics
+        # lift back
+        U = Q @ U_tilde  # (d, k)
+        U = U.T # (k, d)
+        
         S_var = S**2 / jnp.sum(S**2)  # (k,)
         eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True)  # (k,)
         k_dir = jnp.sum(eval_dir)
 
-        #dirs = U.reshape(k, *ref_model.un_flattened_shape)
-        #dirs = safe_normalize_vectors(dirs, axis=-1)
-
-
-        U_flat = U                 # (k, d) take rows as directions
-        U_flat = safe_normalize_vectors(U_flat, axis=-1)   # L2 over the full vector
-        #Qn, _  = jnp.linalg.qr(U_flat.T)           # (d, k) orthonormal columns
-        #U_flat = Qn.T                               # (k, d) orthonormal directions
-        #dirs   = U_flat.reshape(k, *ref_model.un_flattened_shape)   # (k, n, 2)
-        dirs = U_flat
+        dirs = safe_normalize_vectors(U, axis=-1) # (k, d) take rows as directions
         return dirs, eval_dir, k_dir, S_var
+    
 
     # vmap over batch
     U_batch, eval_dir_batch, k_dir_batch, S_var_batch = jax.vmap(single_sample_rand_svd)(
@@ -242,14 +233,6 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, is_ref_fn, kappa=0.95
 
 
 
-import jax
-import jax.numpy as jnp
-from jax import random, jacfwd, jacrev
-from dataclasses import replace 
-
-
-
-import equinox as eqx
 
 class StreamingHessianSketch(eqx.Module):
     
@@ -355,6 +338,9 @@ class StreamingHessianSketch(eqx.Module):
 
 
 
+
+
+
 def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key, kappa=0.95):
 
     d = ref_model.n_dims
@@ -364,7 +350,7 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key, kappa=0.95):
     sketch_directions_w = U_H[:k, :]
 
     ## Step 1: build sketch
-    Y = tvp_batch(
+    Y = t3vp_batch(
         f=f,
         inputs=x, 
         v_dirs=sketch_directions_v,
@@ -379,7 +365,7 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key, kappa=0.95):
     #jax.debug.print("Q.shape {shape}", shape=Q.shape)
 
 
-    # no second tvp pass here, just one pass with sketch directions
+    # no second t3vp pass here, just one pass with sketch directions
 
 
     B = Q.T @ Y_flat # (q, k*k)

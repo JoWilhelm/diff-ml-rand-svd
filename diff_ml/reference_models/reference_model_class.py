@@ -32,6 +32,7 @@ class ReferenceModel(ABC):
     def reference_fn(self) -> Callable[[Float[Array, "d"]], Scalar]:
         """
         TODO
+        Must accept x in the same space as returned by sample(). I.e. if sample() returns normalized data, reference_fn must accept normalized data. 
         """
         pass
     

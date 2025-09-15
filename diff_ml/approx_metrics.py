@@ -4,9 +4,6 @@ import jax.numpy as jnp
 
 def approx_metrics(fn, x, U_dirs):
     """
-    TODO
-   
-    U_dirs: (k, d)
     """
 
     # Hessian at every x (B, d, d)

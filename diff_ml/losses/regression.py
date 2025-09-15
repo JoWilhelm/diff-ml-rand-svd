@@ -14,7 +14,7 @@ import jax.random as jrandom
 from diff_ml.utils import mse, rmse, MakeScalar, generate_random_vectors
 
 from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions
-from diff_ml.hvps_and_t3vps import hvp_batch, tvp_batch, hvp_batch_per_input
+from diff_ml.ad import hvp_batch, t3vp_batch, hvp_batch_per_input
 
 #print(jax.devices())
 
@@ -105,8 +105,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mo
                                         f=ref_fn,
                                         x=x_raw,
                                         k=k,
-                                        key=key,
-                                        is_ref_fn=True
+                                        key=key
                                         )
         
     if variant == "perXSVD":
@@ -115,8 +114,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mo
                                         f=ref_fn,
                                         X=x_raw,
                                         k=k, 
-                                        key=key,
-                                        is_ref_fn=True
+                                        key=key
                                         )
     
     #rand_svd_directions_model, eval_dir, k_dir, S_var_model = get_rand_SVD_directions(
@@ -340,7 +338,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mo
         iteration_data["directions"] = directions
     
     if variant == "perXSVD" or variant == "streaming":
-        iteration_data["directions"] = directions
+        iteration_data["directions"] = dirs_per_x
 
     
 
@@ -387,17 +385,17 @@ def third_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mod
                                     key=key
                                     )
 
-    # tvps targets
-    target_tvps = tvp_batch(
+    # t3vps targets
+    target_t3vps = t3vp_batch(
         f=ref_fn,
         inputs=x_raw, 
         v_dirs=dirs_v,
         w_dirs=dirs_w
     )
 
-    # tvp predictions
+    # t3vp predictions
     # all directions
-    pred_tvps = tvp_batch(
+    pred_t3vps = t3vp_batch(
         f=MakeScalar(model),
         inputs=x, 
         v_dirs=dirs_v,
@@ -406,7 +404,7 @@ def third_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mod
 
 
     # tloss
-    t3_loss = mse(pred_tvps, target_tvps)
+    t3_loss = mse(pred_t3vps, target_t3vps)
         
 
     return t3_loss

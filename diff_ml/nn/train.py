@@ -219,7 +219,7 @@ def make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_wei
         # (your streaming sketching logic unchanged) -> dirs, dirs_per_x, Svals
         dirs = dirs_per_x = Svals = None
         if sketch and variant == "streaming":
-            x = batch["x"]
+            x = batch.x
             sketch, refinement_directions, Svals = sketch.update_batch(x)
             dirs = refinement_directions.mean(axis=0)
             dirs_per_x = refinement_directions
