@@ -7,6 +7,10 @@ from diff_ml.typing import DifferentialData, Scalar
 
 class ReferenceModel(ABC):
 
+    key_test: PRNGKeyArray
+    key_train: PRNGKeyArray
+    n_dims: int  # input dimension
+
 
     def __init__(self, key_test: PRNGKeyArray, key_train: PRNGKeyArray, n_dims: int):
         self.key_test = key_test
