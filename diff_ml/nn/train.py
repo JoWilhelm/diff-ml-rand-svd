@@ -11,7 +11,7 @@ import equinox as eqx
 
 import optax
 
-from jaxtyping import Array, Float, PyTree, PRNGKeyArray
+from jaxtyping import Array, PyTree, PRNGKeyArray
 
 import jax.numpy as jnp
 import jax
@@ -78,7 +78,7 @@ class WeightedSurrogate(eqx.Module):
 
 
 
-def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array, Svals: Array, variant: str, k: int, learnable_loss_weights: bool = True):
+def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, learnable_loss_weights: bool = True):
     """
     combining 0th, 1st, 2nd and 3rd order losses with either equal weights or learnable weights
     """
@@ -182,22 +182,26 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
     """
 
     @eqx.filter_jit
-    def train_step(weighted_model: WeightedSurrogate, sketch: PyTree, opt_state: PyTree, batch_key: PRNGKeyArray):
+    def train_step(weighted_model: WeightedSurrogate, sketch: StreamingHessianSketch | None, opt_state: PyTree, batch_key: PRNGKeyArray):
         
         # get new batch of data from reference model
         batch = ref_model.sample(batch_key, batch_size, order=1)
 
-        dirs = dirs_per_x = Svals = None
+        dirs_per_x = None
+        Svals = None
+        # update sketch and pass directions for loss
         if variant == "streaming":
+            if sketch is None:
+                raise ValueError("sketch must be provided for \'streaming\' variant")
             sketch, refinement_directions, Svals = sketch.update_batch(batch.x)
-            dirs = refinement_directions.mean(axis=0)
             dirs_per_x = refinement_directions
 
-        # Single total loss with learnable weights:
+        # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(
             total_loss_fn, has_aux=True
-        )(weighted_model, batch, batch_key, ref_model, dirs, dirs_per_x, Svals, variant, k, learnable_loss_weights)
+        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, learnable_loss_weights)
 
+        # optimizer step
         updates, opt_state = optim.update(grads, opt_state, weighted_model)
         weighted_model = eqx.apply_updates(weighted_model, updates)
         return weighted_model, opt_state, loss_value, iteration_data, sketch
@@ -210,131 +214,116 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
 
 
 def train(
-    model: PyTree,
+    model: eqx.nn.MLP,
     test_data: DifferentialData,
     optim: optax.GradientTransformation,
     n_epochs: int,
     n_batches_per_epoch: int,
     batch_size: int,
     ref_model: ReferenceModel,
-    sketch: StreamingHessianSketch,
+    sketch: StreamingHessianSketch | None,
     variant: str,
     k: int,
     learnable_loss_weights: bool = True,
-) -> PyTree:
-    
+) -> Tuple[WeightedSurrogate, list[dict], StreamingHessianSketch | None, float]:
+    """
+    TODO
+    """
 
-    print(jax.devices())
+    if test_data.dy is None or test_data.ddy is None:
+        raise ValueError("\'test_data\' must contain at least first and second order derivatives for evaluation.")
 
+    # wrap model with learnable loss weights    
     weighted_model = WeightedSurrogate(base=model)
-
-
     
+    # setup training
     train_step = make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_weights)
     opt_state = optim.init(eqx.filter(weighted_model, eqx.is_array))
     train_loss = jnp.zeros(1)
-
     n_steps = n_epochs * n_batches_per_epoch
     print(f"Training for {n_epochs} epochs with {n_batches_per_epoch} batches per epoch and batch size {batch_size}.")
-    
-    keys = jrandom.split(ref_model.key_train, n_steps)
 
-    #epoch_percent = 0
+    # initialize test errors
+    y_error = dy_error = ddy_error = dddy_error = proj_hvp_rmse = jnp.nan
+
+    # training loop
+    keys = jrandom.split(ref_model.key_train, n_steps)
     iteration_datas = []
-    
     sum_batch_times = 0
-    
     for i, batch_key in enumerate(keys):
         
-        # print(i)
-        # print(batch["normalized_initial_states"])
-        # print(batch["normalized_payoffs"].shape)
         with jax.profiler.StepTraceAnnotation("Train Step", step_num=i):  
 
             #weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
-
 
             # track execution time per batch 
             t0 = time.perf_counter()
             weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
             _ = jax.block_until_ready(train_loss)
             t1 = time.perf_counter()
-            #print(f"Execution time per batch: {t1 - t0:.5f}s")
             sum_batch_times += (t1 -t0)
                 
 
+        # evaluate on test data at end of each epoch
         if i % n_batches_per_epoch == 0:
             epoch_stats = f"Finished epoch {int(i/n_batches_per_epoch)+1} | Train Loss: {train_loss:.5f}"    
 
-            y_error = jnp.nan
-            # test data evaluation
-            if test_data:
-
                 
-                test_pred_ys, test_pred_dys = vmap(jax.value_and_grad(weighted_model))(test_data.x)
-                y_error = jnp.sqrt(mse(test_pred_ys, test_data.y))
-                dy_error = jnp.sqrt(mse(test_pred_dys, test_data.dy))
-                    
-                # comparing to full hessian
-                test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_data.x)
-                test_pred_ddys = test_pred_ddys.reshape(test_data.ddy.shape)
-                ddy_error = jnp.sqrt(mse(test_pred_ddys, test_data.ddy))
-                if variant == "3rdBatchSVD":
-                    # comparing to full third derivative tensor
-                    test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_data.x)
-                    test_pred_dddys = test_pred_dddys.reshape(test_data.dddy.shape)
-                    dddy_error = jnp.sqrt(mse(test_pred_dddys, test_data.dddy))
-                else: dddy_error = .0
+            # 0th and 1st order errors
+            test_pred_ys, test_pred_dys = vmap(jax.value_and_grad(weighted_model))(test_data.x)
+            y_error = jnp.sqrt(mse(test_pred_ys, test_data.y))
+            dy_error = jnp.sqrt(mse(test_pred_dys, test_data.dy))
+                
 
-                # 2nd order error in proj dirs
-                if not variant in ["value", "1st", "fullHessian"]:
+            # 2nd order error comparing full hessians
+            test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_data.x)
+            test_pred_ddys = test_pred_ddys.reshape(test_data.ddy.shape)
+            ddy_error = jnp.sqrt(mse(test_pred_ddys, test_data.ddy))
+            if variant == "3rdBatchSVD" and test_data.dddy is not None:
+                # 3rd order error comparing full third derivative tensors
+                test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_data.x)
+                test_pred_dddys = test_pred_dddys.reshape(test_data.dddy.shape)
+                dddy_error = jnp.sqrt(mse(test_pred_dddys, test_data.dddy))
+            else: dddy_error = .0
 
-                    # comparing along directions used in loss
-                    U = iteration_data["directions"]
 
-                    b = test_data.x.shape[0]
-                    d = ref_model.n_dims
-                    H_true = test_data.ddy.reshape(b, d, d)
-                    H_pred = test_pred_ddys.reshape(b, d, d)
+            # 2nd order error only in directions used in loss
+            if not variant in ["value", "1st", "fullHessian"]:
+        
+                U = iteration_data["directions"]
+                b = test_data.x.shape[0]
+                d = ref_model.n_dims
+                H_true = test_data.ddy.reshape(b, d, d)
+                H_pred = test_pred_ddys.reshape(b, d, d)
 
-                    if variant == "batchSVD" or variant == "random":
-                        # batch-shared directions: U_norm  (k, d)
-                        HU_true  = jnp.einsum('bij,kj->bki', H_true, U)   # (B, k, d)
-                        HU_pred  = jnp.einsum('bij,kj->bki', H_pred, U)   # (B, k, d)
+                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD":
+                    # batch-shared directions: U_norm  (k, d)
+                    HU_true  = jnp.einsum('bij,kj->bki', H_true, U)   # (b, k, d)
+                    HU_pred  = jnp.einsum('bij,kj->bki', H_pred, U)   # (b, k, d)
 
-                    elif variant == "perXSVD" or variant == "streaming":
-                        ## per-x directions: U_norm_perx  (B_train, k, d)
-
-                        U_stack = U.reshape(-1, H_true.shape[-1])  # (B_train*k0, d)
-
-                        # L2-normalize rows
-                        eps = 1e-8
-                        U_stack = U_stack / (jnp.linalg.norm(U_stack, axis=1, keepdims=True) + eps)
-
-                        # Orthonormalize to get a shared basis U_shared: (m, d), with m <= d
-                        Q, _ = jnp.linalg.qr(U_stack.T)   # (d, m)
-                        U_shared = Q.T                    # (m, d)
-
-                        # Projected HVP errors on test set using this shared basis
-                        HU_true = jnp.einsum('bij,kj->bki', H_true, U_shared)   # (B_test, m, d)
-                        HU_pred = jnp.einsum('bij,kj->bki', H_pred, U_shared)
-                    else:
-                        HU_true = jnp.nan
-                        HU_pred = jnp.nan
-
-                    proj_hvp_rmse = rmse(HU_pred, HU_true)
-
+                elif variant == "perXSVD" or variant == "streaming":
+                    # per-input directions (b, k, d)
+                    # normalize all directions
+                    U_stack = U.reshape(-1, H_true.shape[-1])  # (b*k, d)
+                    eps = 1e-12
+                    U_stack = U_stack / (jnp.linalg.norm(U_stack, axis=1, keepdims=True) + eps)
+                    # orthonormal basis spanning the same space
+                    Q, _ = jnp.linalg.qr(U_stack.T)  
+                    U_shared = Q.T    # (m, d) with m <= b*k
+                    # project into shared basis
+                    HU_true = jnp.einsum('bij,kj->bki', H_true, U_shared) # (b, m, d) 
+                    HU_pred = jnp.einsum('bij,kj->bki', H_pred, U_shared) # (b, m, d)
                 else:
-                    proj_hvp_rmse = jnp.nan
+                    HU_true = jnp.nan
+                    HU_pred = jnp.nan
+                # RMSE of projected HVPs
+                proj_hvp_rmse = rmse(HU_pred, HU_true)
 
-
-
-                epoch_stats += f" | Test Value Loss: {y_error:.5f}"
-                #print("ddy error test:", ddy_error)
-
-                
+            # end epoch
+            epoch_stats += f" | Test Value Loss: {y_error:.5f}"
             print(epoch_stats)
         
+        # log per-batch iteration data
         iteration_data["test value loss"] = y_error
         iteration_data["test grad loss"] = dy_error
         iteration_data["test hess loss"] = ddy_error
@@ -342,13 +331,10 @@ def train(
         iteration_data["test proj hess loss"] = proj_hvp_rmse 
         iteration_data["train loss"] = train_loss
         iteration_datas.append(iteration_data)
+        # end batch
 
-
-        #if i % (n_batches_per_epoch*10) == 0:
-        #    epoch_percent = i/n_steps
-    
-
+    # end training loop
     avg_time_per_batch = sum_batch_times / n_steps
     print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
-    
+
     return weighted_model, iteration_datas, sketch, avg_time_per_batch

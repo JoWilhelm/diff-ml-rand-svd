@@ -188,12 +188,11 @@ class StreamingHessianSketch(eqx.Module):
     key: PRNGKeyArray
     Y:  jnp.ndarray
     Omega: jnp.ndarray
-    updates_count: int
-    d: int
     k: int # number of 'local' directions at each x
     r: int # number of 'global' directions r >= k
     ref_model: ReferenceModel
 
+    # NOTE: Y and Omega need to be acceptes as input to __init__ to make the class work with dataclasses.replace
     def __init__(self, ref_model: ReferenceModel, r: int, k: int, key: PRNGKeyArray, Y=None, Omega=None):
         self.key = key
         self.r = r

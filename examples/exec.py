@@ -15,6 +15,10 @@ from diff_ml.losses.directions import StreamingHessianSketch
 from diff_ml.utils import rmse
 
 
+
+print(jax.devices())
+
+
 key = jrandom.PRNGKey(1)
 key, subkey = jrandom.split(key)
 

@@ -6,16 +6,21 @@ import equinox as eqx
 def normalize(x, x_mean, x_std):
     return (x - x_mean) / x_std
 
-
 def normalize_vectors(vectors):
     return vectors / jnp.linalg.norm(vectors, axis=1, keepdims=True)
 
-def generate_random_vectors(k, dim, key, normalize=True):
-    key, subkey = jax.random.split(key)
-    vectors = jax.random.normal(subkey, shape=(k, dim))
-    if normalize:
-        vectors = normalize_vectors(vectors)
-    return vectors
+def safe_normalize_vectors(vectors, axis, eps=1e-12):
+    n = jnp.linalg.norm(vectors, axis=axis, keepdims=True)
+    return vectors / (n + eps)
+
+
+def generate_random_vectors(shape, key, normalize):
+   vectors = jax.random.normal(key, shape=shape)
+   if normalize:
+       vectors = vectors.reshape(vectors.shape[0], -1)
+       vectors = safe_normalize_vectors(vectors, axis=-1)
+       vectors = vectors.reshape(shape)
+   return vectors
 
 
 def mse(y_pred, y_true):
@@ -32,13 +37,7 @@ def cosine_loss(p, t, eps=1e-8):
 
 def wse(y_pred, y_true, w):
     """
-    Weighted squared error over (b, k, d).
-    
-    Args:
-        y_pred, y_true: arrays of shape (b, k, d)
-        w: array of shape (k,) or (b, k), weights sum to 1
-    Returns:
-        scalar weighted squared error
+    TODO
     """
     diff2 = (y_pred - y_true) ** 2       # (b, k, d)
     per_dir = jnp.mean(diff2, axis=-1)   # (b, k), average over d
@@ -53,46 +52,18 @@ def wse(y_pred, y_true, w):
 
 
 
-
 class Range(eqx.Module):
     minval: float = 0.0
     maxval: float = 1.0
 
 
 class MakeScalar(eqx.Module):
-    model: eqx.Module
-
+    """
+    TODO
+    """
+    model: eqx.nn.MLP
     def __call__(self, *args, **kwargs):
         out = self.model(*args, **kwargs)
         return jnp.reshape(out, ())
     
-
     
-
-
-
-
-#def normalize_vectors(vectors, axis):
-#    return vectors / jnp.linalg.norm(vectors, axis=axis, keepdims=True)
-
-
-def safe_normalize_vectors(vectors, axis, eps=1e-12):
-    n = jnp.linalg.norm(vectors, axis=axis, keepdims=True)
-    return vectors / (n + eps)
-
-#def generate_random_vectors(k, dim, key, normalize=True):
-#    key, subkey = jax.random.split(key)
-#    vectors = jax.random.normal(subkey, shape=(k, dim))
-#    if normalize:
-#        vectors = normalize_vectors(vectors)
-#    return vectors
-
-
-
-def generate_random_vectors(shape, key, normalize):
-   vectors = jax.random.normal(key, shape=shape)
-   if normalize:
-       vectors = vectors.reshape(vectors.shape[0], -1)
-       vectors = safe_normalize_vectors(vectors, axis=-1)
-       vectors = vectors.reshape(shape)
-   return vectors
