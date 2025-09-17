@@ -11,10 +11,7 @@ import equinox as eqx
 
 import optax
 
-
-from typing_extensions import TypeAlias
-from jaxtyping import Array, Float, PyTree
-
+from jaxtyping import Array, Float, PyTree, PRNGKeyArray
 
 import jax.numpy as jnp
 import jax
@@ -29,122 +26,103 @@ from diff_ml.reference_models.reference_model_class import ReferenceModel
 from diff_ml.utils import mse, rmse, MakeScalar
 
 from diff_ml.approx_metrics import approx_metrics, approx_metrics_per_x
+import time
 
 
-print(jax.devices())
 
 
 
 class UncertaintyWeighter(eqx.Module):
-    """Learnable homoscedastic uncertainties for up to 4 tasks (0..3)."""
-    # s = log(sigma^2)
+    """
+    learnable uncertainties for up to 4 tasks
+    """
     s0: jnp.ndarray = eqx.field(default_factory=lambda: jnp.array(0.003))
     s1: jnp.ndarray = eqx.field(default_factory=lambda: jnp.array(0.003))
     s2: jnp.ndarray = eqx.field(default_factory=lambda: jnp.array(0.003))
     s3: jnp.ndarray = eqx.field(default_factory=lambda: jnp.array(0.003))
 
-    def combine(
-        self,
-        losses: jnp.ndarray,         # shape (4,)  e.g. [L0, L1, L2, L3]
-        active_mask: jnp.ndarray,    # shape (4,)  boolean or {0,1} for which losses are active
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def combine(self, losses: jnp.ndarray, active_mask: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
-        Returns:
-          total_loss: scalar  (sum over active tasks of 0.5*exp(-s)*L + 0.5*s)
-          norm_w:     shape (4,) normalized effective weights for display, zeros on inactive
+        combine losses weighted by learned uncertainties
         """
-        # stack parameters -> shape (4,)
-        s = jnp.stack([self.s0, self.s1, self.s2, self.s3])              # (4,)
-        w = 0.5 * jnp.exp(-s)                                            # (4,)
+        s = jnp.stack([self.s0, self.s1, self.s2, self.s3])  # (4,)
+        w = 0.5 * jnp.exp(-s)                                # (4,)
 
-        # Ensure mask is float {0,1}
-        m = active_mask.astype(losses.dtype)                              # (4,)
+        # total loss over active tasks: sum( w*L + 0.5*s )
+        total = jnp.sum(w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)  
 
-        # Total loss over active tasks: sum( w*L + 0.5*s ) on active entries
-        total = jnp.sum(w * losses * m) + 0.5 * jnp.sum(s * m)           # scalar
-
-        # Normalized display weights over active tasks only
-        w_active = w * m
+        # normalized effective weights for display
+        w_active = w * active_mask
         denom = jnp.sum(w_active) + 1e-12
-        norm_w = jnp.where(m > 0, w_active / denom, 0.0)                 # (4,)
+        norm_w = w_active / denom
+        #norm_w = jnp.where(active_mask > 0, w_active / denom, 0.0)       
 
         return total, norm_w
 
 
 class WeightedSurrogate(eqx.Module):
-    base: eqx.Module
+    """
+    Wrapper class for surrogate MLP and learnable loss balancing weights
+    """
+    base: eqx.nn.MLP
     uw: UncertaintyWeighter = eqx.field(default_factory=UncertaintyWeighter)
 
     def __call__(self, *args, **kwargs):
+        # normal call to the underlying MLP
         return self.base(*args, **kwargs)
 
 
 
 
 
-def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key, ref_model, dirs, dirs_per_x, Svals, variant: str, k: int, learnable_loss_weights: bool = True):
-    
-    base = weighted_model.base
-    uw   = weighted_model.uw
 
-    # Your existing component losses (all scalars)
-    L0 = standard_loss_fn(base, batch)                    # 0th order
+
+
+def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array, Svals: Array, variant: str, k: int, learnable_loss_weights: bool = True):
+    """
+    combining 0th, 1st, 2nd and 3rd order losses with either equal weights or learnable weights
+    """
+
+    model = weighted_model.base
     
     
-    L1, iter_data = 0.0, {}
+    L0 = standard_loss_fn(model, batch) 
+    L1 = 0.0
     L2 = 0.0
     L3 = 0.0
+    iter_data = {}
 
     if not variant == "value":
-        L1 = first_order_loss_fn(base, batch)                 # 1st order
-        
+        L1 = first_order_loss_fn(model, batch)
         
         if variant not in ["value", "1st"]:
-            # second_order_loss_fn returns (loss, iter_data)
-            (L2, iter_data) = second_order_loss_fn(base, batch, batch_key, ref_model, dirs, dirs_per_x, Svals, variant, k)
+            (L2, iter_data) = second_order_loss_fn(model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k)
             
-
-
-
+            # approximation metrics for 2nd order
             if not variant == "fullHessian":
-                # Do approximation metric here with returned directions
-                u_H = iter_data.get("directions", None)
-    
-                x = batch.x
-                x_raw_flat = x.reshape(x.shape[0], ref_model.n_dims)
-                
+                u_H = iter_data["directions"]
                 if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
-                    approximation_metrics_ref = approx_metrics(
+                    iter_data["approximation metrics ref"] = approx_metrics(
                                                                fn=ref_model.reference_fn(),
-                                                               x=x_raw_flat, 
+                                                               x=batch.x, 
                                                                U_dirs=u_H
                                                                )
                 if variant == "perXSVD" or variant == "streaming":
-                    approximation_metrics_ref = approx_metrics_per_x(
+                    iter_data["approximation metrics ref"] = approx_metrics_per_x(
                                                                fn=ref_model.reference_fn(),
-                                                               x=x_raw_flat, 
+                                                               x=batch.x, 
                                                                dirs_per_x=u_H
                                                                )
-    
-    
-                iter_data["approximation metrics ref"] = approximation_metrics_ref
-
-
-
-
-
-
-
-
-            # Optional third-order branch
+            
             if variant == "3rdBatchSVD":
-                # You already store U_H in iter_data in your current code
-                u_H = iter_data.get("directions", None)
-                L3  = third_order_loss_fn(base, batch, batch_key, ref_model, u_H, k)
+                u_H = iter_data["directions"]
+                L3  = third_order_loss_fn(model, batch, batch_key, ref_model, u_H, k)
                 
 
+    #### ---- combine losses ---- ####
 
     if not learnable_loss_weights:
+        # weighted equally and constant
         if variant == "value":
             total = L0
             iter_data["eff_w_norm"] = [1, 0, 0, 0]
@@ -171,35 +149,23 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             iter_data["eff_w_norm"] = [a, b, c, 0]
             return total, iter_data
         
-
-    # Select which losses are active for the chosen variant
-    # Order: [L0, L1, L2, L3]
-    if variant == "value":
-        active = [0]
-    elif variant == "1st":
-        active = [0, 1]
-    elif variant == "3rdBatchSVD":
-        active = [0, 1, 2, 3]
-    else:
-        active = [0, 1, 2]
-
+    # learnable loss weights
     L1 = L1 if not variant == "value" else 0.0
     L2 = L2 if variant not in ["value", "1st"] else 0.0
     L3 = L3 if variant == "3rdBatchSVD" else 0.0
     loss_vec = jnp.array([L0, L1, L2, L3])
 
     if variant == "value":
-        mask = jnp.array([1, 0, 0, 0], dtype=loss_vec.dtype)
+        active_mask = jnp.array([1, 0, 0, 0])
     elif variant == "1st":
-        mask = jnp.array([1, 1, 0, 0], dtype=loss_vec.dtype)
+        active_mask = jnp.array([1, 1, 0, 0])
     elif variant == "3rdBatchSVD":
-        mask = jnp.array([1, 1, 1, 1], dtype=loss_vec.dtype)
+        active_mask = jnp.array([1, 1, 1, 1])
     else:
-        mask = jnp.array([1, 1, 1, 0], dtype=loss_vec.dtype)
+        active_mask = jnp.array([1, 1, 1, 0])
 
-    total, norm_w = weighted_model.uw.combine(loss_vec, mask)
+    total, norm_w = weighted_model.uw.combine(loss_vec, active_mask)
 
-    # If you want to log the normalized weights per iteration:
     iter_data["eff_w_norm"] = norm_w
 
     return total, iter_data
@@ -208,19 +174,22 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
 
 
-import time
 
-def make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_weights: bool = True):
+
+def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, learnable_loss_weights: bool = True):
+    """
+    TODO
+    """
 
     @eqx.filter_jit
-    def train_step(weighted_model: WeightedSurrogate, sketch: PyTree, opt_state: PyTree, batch_key):
-        batch = ref_model.sample(batch_key, batch_size)
+    def train_step(weighted_model: WeightedSurrogate, sketch: PyTree, opt_state: PyTree, batch_key: PRNGKeyArray):
+        
+        # get new batch of data from reference model
+        batch = ref_model.sample(batch_key, batch_size, order=1)
 
-        # (your streaming sketching logic unchanged) -> dirs, dirs_per_x, Svals
         dirs = dirs_per_x = Svals = None
-        if sketch and variant == "streaming":
-            x = batch.x
-            sketch, refinement_directions, Svals = sketch.update_batch(x)
+        if variant == "streaming":
+            sketch, refinement_directions, Svals = sketch.update_batch(batch.x)
             dirs = refinement_directions.mean(axis=0)
             dirs_per_x = refinement_directions
 
@@ -234,6 +203,10 @@ def make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_wei
         return weighted_model, opt_state, loss_value, iteration_data, sketch
 
     return train_step
+
+
+
+
 
 
 def train(
@@ -251,7 +224,8 @@ def train(
 ) -> PyTree:
     
 
-    
+    print(jax.devices())
+
     weighted_model = WeightedSurrogate(base=model)
 
 

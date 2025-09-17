@@ -181,6 +181,9 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, kappa=0.95):
 
 
 class StreamingHessianSketch(eqx.Module):
+    """
+    TODO
+    """
     
     key: PRNGKeyArray
     Y:  jnp.ndarray
@@ -276,6 +279,9 @@ class StreamingHessianSketch(eqx.Module):
 
 
 def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k):
+    """
+    TODO
+    """
 
     d = ref_model.n_dims
     
