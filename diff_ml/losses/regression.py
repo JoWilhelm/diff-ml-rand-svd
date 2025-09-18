@@ -49,7 +49,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
     """
 
     if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:
-        raise ValueError("variant must be either random, pca, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
+        raise ValueError("variant must be either random, pcady, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
 
     iteration_data = {}
 
