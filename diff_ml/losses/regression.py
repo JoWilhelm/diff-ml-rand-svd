@@ -5,14 +5,10 @@ from jax import random as jrandom
 import equinox as eqx
 
 from jaxtyping import Array, Float, PRNGKeyArray
+
 from diff_ml.typing import DifferentialData
 from diff_ml.reference_models.reference_model_class import ReferenceModel
-
-import jax
-import jax.random as jrandom
-
 from diff_ml.utils import mse, MakeScalar, generate_random_vectors
-
 from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions
 from diff_ml.ad import hvp_batch, t3vp_batch, hvp_batch_per_input
 

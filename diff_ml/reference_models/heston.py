@@ -1,13 +1,8 @@
-"""
-TODO
-"""
-from jaxtyping import Array, Float, PRNGKeyArray
-
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 
-import jax.numpy as jnp
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from diff_ml.utils import Range, normalize
 from diff_ml.typing import DifferentialData, Scalar

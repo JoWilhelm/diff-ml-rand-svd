@@ -1,13 +1,15 @@
-from jaxtyping import PRNGKeyArray
-from typing import Callable
-from diff_ml.utils import generate_random_vectors, safe_normalize_vectors
-from diff_ml.ad import hvp_batch, t3vp_batch
 import jax
 import jax.numpy as jnp
 from jax import random
-from dataclasses import replace 
 import equinox as eqx
+
+from jaxtyping import PRNGKeyArray
+
+from diff_ml.utils import generate_random_vectors, safe_normalize_vectors
+from diff_ml.ad import hvp_batch, t3vp_batch
 from diff_ml.reference_models.reference_model_class import ReferenceModel
+
+from dataclasses import replace 
 
 
 
@@ -63,6 +65,8 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 #        Y = jnp.mean(Y, axis=0)  # (k, dim)
 #
 #    return Y
+
+
 
 
 

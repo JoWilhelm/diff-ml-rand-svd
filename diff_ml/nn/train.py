@@ -1,32 +1,21 @@
-import equinox as eqx
-import jax.numpy as jnp
-from typing import Tuple
-from diff_ml.typing import DifferentialData
-
-import jax
-from jax import vmap
-import jax.numpy as jnp
-from jax import random as jrandom
-import equinox as eqx
-
-import optax
-
-from jaxtyping import Array, PyTree, PRNGKeyArray
-
-import jax.numpy as jnp
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
+from jax import vmap
+import equinox as eqx
 
+from jaxtyping import Array, PyTree, PRNGKeyArray
+from typing import Tuple
 
 from diff_ml.losses.regression import standard_loss_fn, first_order_loss_fn, second_order_loss_fn, third_order_loss_fn
 from diff_ml.losses.directions import StreamingHessianSketch
 from diff_ml.reference_models.reference_model_class import ReferenceModel
-
 from diff_ml.utils import mse, rmse, MakeScalar
-
 from diff_ml.approx_metrics import approx_metrics, approx_metrics_per_x
+from diff_ml.typing import DifferentialData
+
 import time
+import optax
 
 
 

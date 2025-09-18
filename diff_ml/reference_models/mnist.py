@@ -1,33 +1,17 @@
-import argparse
 import jax
 import jax.numpy as jnp
 import jax.random as random
 import jax.image as jim
 import equinox as eqx
-import optax
-import tensorflow_datasets as tfds
+
 from jaxtyping import Array, Float, PRNGKeyArray, ScalarLike
-from typing import Final
-from dataclasses import field
-from typing import Tuple
 from jaxtyping import Array, Float, PRNGKeyArray
 
-
-import jax
-import jax.numpy as jnp
-import equinox as eqx
-import jax.random as jrandom
-
-from typing_extensions import TypeAlias
-
-
-
-import jax.numpy as jnp
-
-Data: TypeAlias = dict[str, Float[Array, "n_samples ..."]]
-from diff_ml.utils import Range
-from diff_ml.typing import DifferentialData
 from diff_ml.reference_models.reference_model_class import ReferenceModel
+from diff_ml.typing import DifferentialData
+
+import optax
+import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
@@ -121,8 +105,8 @@ class MNIST_ref(ReferenceModel):
         # load entire train & test splits as NumPy arrays
         ds = tfds.load("mnist", split=["train", "test"],
                        batch_size=-1, as_supervised=True)
-        train_imgs, train_lbls = tfds.as_numpy(ds[0])
-        test_imgs,  test_lbls  = tfds.as_numpy(ds[1])
+        train_imgs, train_lbls = tfds.as_numpy(ds[0]) # type: ignore
+        test_imgs,  test_lbls  = tfds.as_numpy(ds[1]) # type: ignore
 
         # normalize and resize
         train_imgs = train_imgs.astype(jnp.float32) / 255.0

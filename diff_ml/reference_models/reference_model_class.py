@@ -1,8 +1,8 @@
 from jaxtyping import Array, Float, PRNGKeyArray
 from typing import Callable
+from diff_ml.typing import DifferentialData, Scalar
 from abc import ABC, abstractmethod
 
-from diff_ml.typing import DifferentialData, Scalar
 
 
 class ReferenceModel(ABC):

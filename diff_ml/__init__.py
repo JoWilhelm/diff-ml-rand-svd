@@ -1,7 +1,5 @@
 import importlib.metadata
-
 from diff_ml import losses, nn, typing, utils
-#from diff_ml.ad import hmp, hvp
 from diff_ml.nn import train
 
 

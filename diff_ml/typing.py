@@ -1,6 +1,5 @@
-from collections.abc import Callable
-from typing_extensions import TypeAlias
 from jaxtyping import Array, Float
+from typing_extensions import TypeAlias
 
 
 class DifferentialData():

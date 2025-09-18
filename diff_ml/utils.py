@@ -61,9 +61,9 @@ class MakeScalar(eqx.Module):
     """
     TODO
     """
-    model: eqx.nn.MLP
+    model: eqx.Module
     def __call__(self, *args, **kwargs):
-        out = self.model(*args, **kwargs)
+        out = self.model(*args, **kwargs) # type: ignore
         return jnp.reshape(out, ())
     
     

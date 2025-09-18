@@ -1,17 +1,12 @@
-"""
-TODO
-"""
 import jax
 import jax.numpy as jnp
 
-from diff_ml.utils import normalize
-from diff_ml.plotting import plot_3d_differential_data
-
-from typing import Callable
 from jaxtyping import Array, Float, PRNGKeyArray
+from typing import Callable
 
 from diff_ml.reference_models.reference_model_class import ReferenceModel
-
+from diff_ml.utils import normalize
+from diff_ml.plotting import plot_3d_differential_data
 from diff_ml.typing import DifferentialData, Scalar
 
 

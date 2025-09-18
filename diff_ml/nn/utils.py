@@ -1,5 +1,6 @@
 import jax
 import equinox as eqx
+
 from jaxtyping import Array, PRNGKeyArray
 
 # Utility functions for model initialization

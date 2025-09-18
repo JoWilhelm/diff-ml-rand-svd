@@ -1,24 +1,24 @@
+import jax
+import jax.numpy as jnp
+import jax.random as jrandom
+import jax.scipy.stats as jstats
+
+from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray, ScalarLike
+
+from diff_ml.reference_models.reference_model_class import ReferenceModel
+from diff_ml.utils import rmse
+from diff_ml.typing import DifferentialData, Scalar
+
+from functools import partial
+import matplotlib.pyplot as plt
+
+
+
 """
 TODO
 
 credit: Neil Kichler
 """
-import jax
-import jax.numpy as jnp
-import jax.random as jrandom
-
-import jax.scipy.stats as jstats
-
-from functools import partial
-
-from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray, ScalarLike
-from diff_ml.typing import DifferentialData, Scalar
-
-from diff_ml.reference_models.reference_model_class import ReferenceModel
-
-
-
-
 
 
 class EuropeanPayoff:
@@ -371,33 +371,18 @@ class Bachelier(ReferenceModel):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-    # TODO clean up
     def visualize_data(self, dataset: DifferentialData, name: str):
 
-        if is_second_order:
-            x, y, dydx, ddyddx, dydvol, baskets = dataset
-
+        x = dataset.x
+        y = dataset.y
+        dy = dataset.dy
+        ddy = dataset.ddy
+        if dataset.order >= 2:
             # project back onto basket weights
             w = self.weights                      
-            ddyddx = jnp.einsum('bij,i,j->b', ddyddx, w, w) / ((w @ w) ** 2)  # (b,)
-        else:
-            x, y, dydx, paths1 = dataset
-            baskets = jnp.dot(x, self.weights).reshape((-1, 1))
+            ddy = jnp.einsum('bij,i,j->b', ddy, w, w) / ((w @ w) ** 2)  # (b,)
+        baskets = jnp.dot(x, self.weights).reshape((-1, 1))
 
-        
-        
         
         # Create a single figure with 3 subplots
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -408,16 +393,58 @@ class Bachelier(ReferenceModel):
 
         # Plot the second subplot
         dydx_idx = 0
-        axes[1].plot(baskets, dydx[:, dydx_idx], '.', markersize=1)
+        axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1)
         axes[1].set_title(f"Differentials {name}")
 
-        if is_second_order:
+        if dataset.order >= 2 and ddy is not None:
             # Calculate and plot gammas in the third subplot
             #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
-            axes[2].plot(baskets, ddyddx, '.', markersize=1)
+            axes[2].plot(baskets, ddy, '.', markersize=1)
             axes[2].set_title(f"Gammas {name}")
 
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
         plt.show()
         
+
+
+    # visualize model predictions
+    def plot_eval(self, pred_y, pred_dydx, pred_ddyddx, test_ds: DifferentialData):
+
+
+        baskets = jnp.dot(test_ds.x, self.weights).reshape((-1, 1))
+        y_test = test_ds.y
+        dydx_test = test_ds.dy
+        gammas = test_ds.ddy
+
+        pred_y = pred_y[:, jnp.newaxis]
+
+        # Create a single figure with 3 subplots
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Plot the first subplot
+        axes[0].plot(baskets, pred_y, '.', markersize=1)
+        axes[0].plot(baskets, y_test, '.', markersize=1)
+        axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
+        axes[0].set_title(f"Values \n rmse: {rmse(pred_y, y_test)}")
+
+        # Plot the second subplot
+        dydx_idx = 0
+        axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1)
+        axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1)
+        axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
+        axes[1].set_title(f"Differentials\nrmse: {rmse(pred_dydx, dydx_test)}")
+
+        # Calculate and plot gammas in the third subplot
+        pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
+        axes[2].plot(baskets, pred_gammas, '.', markersize=1, label='Pred')
+        axes[2].plot(baskets, gammas, '.', markersize=1, label='True')
+        axes[2].legend()
+        axes[2].set_title(f"Gammas\nrmse: {rmse(pred_gammas, gammas)}")
+
+        # Adjust the layout and save the figure to a PDF file
+        plt.tight_layout()
+        plt.show()
+        #now = datetime.datetime.now()
+        #fig.savefig(f'result/eval_ml_{now}.pdf', bbox_inches='tight')
+
