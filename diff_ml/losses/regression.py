@@ -9,7 +9,7 @@ from jaxtyping import Array, Float, PRNGKeyArray
 from diff_ml.typing import DifferentialData
 from diff_ml.reference_models.reference_model_class import ReferenceModel
 from diff_ml.utils import mse, MakeScalar, generate_random_vectors
-from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions
+from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions, PCA_of_dydx_directions
 from diff_ml.ad import hvp_batch, t3vp_batch, hvp_batch_per_input
 
 
@@ -48,8 +48,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
     TODO
     """
 
-    if not variant in ["random", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:
-        raise ValueError("variant must be either random, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
+    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:
+        raise ValueError("variant must be either random, pca, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
 
     iteration_data = {}
 
@@ -69,6 +69,13 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
 
     if variant == "fullHessian":
         mode = "none"
+
+    elif variant == "pcady":
+        mode = "batch_averaged"
+        directions, eval_dir, k_dir = PCA_of_dydx_directions(dydx=batch.dy)
+        directions = directions[:k, :] # take top k
+        iteration_data["directions"] = directions
+
 
     elif variant == "random":
         mode = "batch_averaged"

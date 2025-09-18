@@ -13,12 +13,10 @@ from dataclasses import replace
 
 
 
-# TODO incorporate PCA directions in train and eval loop
-# apply PCA to first-order gradients of predictions
+# apply PCA to first-order gradients of reference model
 # credit Neil Kichler
 def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
-    
-    
+        
     dydx_means = jnp.mean(dydx, axis=0)
     tiled_dydx_used_means = jnp.tile(dydx_means, (dydx.shape[0], 1))
     dydx_used_mean_adjusted = dydx - tiled_dydx_used_means

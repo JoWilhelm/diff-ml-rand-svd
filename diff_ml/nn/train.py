@@ -90,13 +90,13 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             # approximation metrics for 2nd order
             if not variant == "fullHessian":
                 u_H = iter_data["directions"]
-                if variant == "batchSVD" or variant == "random" or variant == "3rdBatchSVD":
+                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady"):
                     iter_data["approximation metrics ref"] = approx_metrics(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
                                                                U_dirs=u_H
                                                                )
-                if variant == "perXSVD" or variant == "streaming":
+                if variant in ("perXSVD", "streaming"):
                     iter_data["approximation metrics ref"] = approx_metrics_per_x(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
