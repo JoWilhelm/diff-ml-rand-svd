@@ -16,13 +16,16 @@ from dataclasses import replace
 # apply PCA to first-order gradients of reference model
 # credit Neil Kichler
 def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
-        
+    
+    # dydx: (b, d)
+
     dydx_means = jnp.mean(dydx, axis=0)
     tiled_dydx_used_means = jnp.tile(dydx_means, (dydx.shape[0], 1))
     dydx_used_mean_adjusted = dydx - tiled_dydx_used_means
     U, S, VT = jnp.linalg.svd(dydx_used_mean_adjusted, full_matrices=False)
-    principal_components = jnp.diag(S) @ VT
-    pca_directions = principal_components.T
+    
+    pca_directions = jnp.diag(S) @ VT
+    #pca_directions = principal_components.T
     #jax.debug.print("principal_components.shape {shape}", shape=principal_components.shape)
     #jax.debug.print("principal_components[0] {pc0}", pc0=principal_components[0])
     #jax.debug.print("")
