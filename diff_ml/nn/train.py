@@ -67,7 +67,7 @@ class WeightedSurrogate(eqx.Module):
 
 
 
-def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, learnable_loss_weights: bool = True):
+def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
     combining 0th, 1st, 2nd and 3rd order losses with either equal weights or learnable weights
     """
@@ -88,7 +88,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             (L2, iter_data) = second_order_loss_fn(model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k)
             
             # approximation metrics for 2nd order
-            if not variant == "fullHessian":
+            if not variant == "fullHessian" and do_approx_metrics:
                 u_H = iter_data["directions"]
                 if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady"):
                     iter_data["approximation metrics ref"] = approx_metrics(
@@ -165,7 +165,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
 
 
-def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, learnable_loss_weights: bool = True):
+def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
     TODO
     """
@@ -188,7 +188,7 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
         # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(
             total_loss_fn, has_aux=True
-        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, learnable_loss_weights)
+        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, learnable_loss_weights, do_approx_metrics)
 
         # optimizer step
         updates, opt_state = optim.update(grads, opt_state, weighted_model)
@@ -214,6 +214,7 @@ def train(
     variant: str,
     k: int,
     learnable_loss_weights: bool = True,
+    do_approx_metrics: bool = False
 ) -> Tuple[WeightedSurrogate, list[dict], StreamingHessianSketch | None, float]:
     """
     TODO
@@ -226,7 +227,7 @@ def train(
     weighted_model = WeightedSurrogate(base=model)
     
     # setup training
-    train_step = make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_weights)
+    train_step = make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_weights, do_approx_metrics)
     opt_state = optim.init(eqx.filter(weighted_model, eqx.is_array))
     train_loss = jnp.zeros(1)
     n_steps = n_epochs * n_batches_per_epoch
@@ -250,7 +251,8 @@ def train(
             weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
             _ = jax.block_until_ready(train_loss)
             t1 = time.perf_counter()
-            sum_batch_times += (t1 -t0)
+            if i >= 3:
+                sum_batch_times += (t1 - t0)
                 
 
         # evaluate on test data at end of each epoch
@@ -323,7 +325,7 @@ def train(
         # end batch
 
     # end training loop
-    avg_time_per_batch = sum_batch_times / n_steps
+    avg_time_per_batch = sum_batch_times / (n_steps - 3)
     print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
 
     return weighted_model, iteration_datas, sketch, avg_time_per_batch
