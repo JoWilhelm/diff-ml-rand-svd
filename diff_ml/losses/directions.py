@@ -125,8 +125,6 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, kappa=0.95):
 
 
 
-
-
 def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, kappa=0.95):
     """
     TODO

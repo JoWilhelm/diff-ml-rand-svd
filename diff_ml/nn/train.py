@@ -214,7 +214,8 @@ def train(
     variant: str,
     k: int,
     learnable_loss_weights: bool = True,
-    do_approx_metrics: bool = False
+    do_approx_metrics: bool = False,
+    do_test_eval: bool = True
 ) -> Tuple[WeightedSurrogate, list[dict], StreamingHessianSketch | None, float]:
     """
     TODO
@@ -256,7 +257,7 @@ def train(
                 
 
         # evaluate on test data at end of each epoch
-        if i % n_batches_per_epoch == 0:
+        if do_test_eval and i % n_batches_per_epoch == 0:
             epoch_stats = f"Finished epoch {int(i/n_batches_per_epoch)+1} | Train Loss: {train_loss:.5f}"    
 
                 
