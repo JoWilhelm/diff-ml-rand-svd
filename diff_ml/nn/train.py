@@ -24,6 +24,7 @@ import optax
 class UncertaintyWeighter(eqx.Module):
     """
     learnable uncertainties for up to 4 tasks
+    s = log(sigma^2)
     """
     s0: jnp.ndarray = eqx.field(default_factory=lambda: jnp.array(0.003))
     s1: jnp.ndarray = eqx.field(default_factory=lambda: jnp.array(0.003))
@@ -38,6 +39,7 @@ class UncertaintyWeighter(eqx.Module):
         w = 0.5 * jnp.exp(-s)                                # (4,)
 
         # total loss over active tasks: sum( w*L + 0.5*s )
+        # where the second term prevents s -> -inf
         total = jnp.sum(w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)  
 
         # normalized effective weights for display
@@ -47,6 +49,10 @@ class UncertaintyWeighter(eqx.Module):
         #norm_w = jnp.where(active_mask > 0, w_active / denom, 0.0)       
 
         return total, norm_w
+    
+
+
+
 
 
 class WeightedSurrogate(eqx.Module):
