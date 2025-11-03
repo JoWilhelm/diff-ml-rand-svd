@@ -275,17 +275,13 @@ class StreamingHessianSketch(eqx.Module):
         local_dirs = safe_normalize_vectors(Us, axis=-1)
         return local_dirs, Svals
 
+    
 
 
 
 
 
-
-
-
-
-
-class StreamingHessianSketchOjas(eqx.Module):
+class StreamingHessianSketchOjasLite(eqx.Module):
     key: PRNGKeyArray
     Q:  jnp.ndarray      # (d, r) orthonormal basis (replace Y)
     Omega: jnp.ndarray   # (d, r) fixed probes if you still want them
@@ -310,89 +306,67 @@ class StreamingHessianSketchOjas(eqx.Module):
             self.Omega = Omega
         self.ref_model = ref_model
 
-    
-    
+
+
     def update_batch(self, X_batch):
-        # G: (b, d, r) current H action on Q columns
-        B = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)  # (b, r, d)
-        G = jnp.transpose(B, (0, 2, 1))                                  # (b, d, r)
-        # Oja step with batch mean
         eta = self.beta
-        # project components already explained by Q
-        QT_G = jnp.einsum('dr,bdj->brj', self.Q, G)   # (b, r, r)
-        proj = jnp.einsum('dr,brs->bds', self.Q, QT_G)  # (b, d, r)
-        delta = jnp.mean(G - proj, axis=0)              # (d, r)
-        Q_tilde = self.Q + eta * delta
-        Q_new, _ = jnp.linalg.qr(Q_tilde)
+    
+        # --- Oja residual part (exploit) ---
+        B = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
+        B = jnp.transpose(B, (0, 2, 1))                                      # (b, d, r)
+        QT_B = jnp.einsum('rd,bdj->brj', self.Q.T, B)                          # (b, r, r)
+        proj_q = jnp.einsum('dr,brs->bds', self.Q, QT_B)                      # (b, d, r)
+        delta_q = jnp.mean(B - proj_q, axis=0)                                # (d, r)
+    
+        # --- small exploration on deflated Omega (explore) ---
+        Omega_perp = self.Omega - self.Q @ (self.Q.T @ self.Omega)             # (d, r)
+        # optional: orthonormalize probes to improve conditioning
+        Omega_perp, _ = jnp.linalg.qr(Omega_perp)                              # (d, r)
+        dY = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T)   # (b, r, d)
+        delta_o = jnp.mean(jnp.transpose(dY, (0, 2, 1)), axis=0)               # (d, r)
+    
+        # blend (epsilon small, e.g. 0.05)
+        eps = 0.05
+        delta = delta_q + eps * delta_o
+    
+        # update and re-orth
+        Q_new = self.Q + eta * delta
+        Q_new, _ = jnp.linalg.qr(Q_new)
+    
         sketch_new = replace(self, Q=Q_new)
         local_dirs, Svals = sketch_new.local_directions_batch(X_batch)
         return sketch_new, local_dirs, Svals
+    
 
     
     def local_directions_batch(self, X_batch):
+       
         # project H onto current basis for each sample
         Bs = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)  # (b, r, d)
-        # Row-Gram aggregation per sample: G_i = B_i B_i^T in (r, r)
-        Gs = jnp.einsum('brd,bsd->brs', Bs, Bs)  # (b, r, r)
-        # shared batch directions: eig of mean Gram
-        G = jnp.mean(Gs, axis=0)                # (r, r)
-        evals, U_r = jnp.linalg.eigh(G)
-        U_r = U_r[:, ::-1]
-        U_r_k = U_r[:, :self.k]                 # (r, k)
-        # lift back to input space
-        Us = self.Q @ U_r_k                     # (d, k)
-        dirs = safe_normalize_vectors(Us.T, axis=-1)  # (k, d)
-        # EVR from eigenvalues
-        lam = jnp.maximum(evals[::-1], 0.0)     # descending
-        lam_k = lam[:self.k]
-        Svals = lam_k / (jnp.sum(lam) + 1e-12)
-        # broadcast Svals per batch if you want per-sample weights
-        Svals = jnp.tile(Svals[None, :], (X_batch.shape[0], 1))
-        return dirs, Svals
+        # TODO potentially re-use a cached B from one step before?
 
-    
-    #def local_directions_batch(self, X_batch):
-    #    """
-    #    Compute local Hessian singular directions for a batch X_batch (b, d)
-    #    """
-    #
-    #    # orhtonormalize global sketch
-    #    #Q, _ = jnp.linalg.qr(self.Y)  # (d, r)
-    #    #jax.debug.print("U: {}", U)
-    #
-    #    #b, d = X_batch.shape
-    #    Bs = hvp_batch(
-    #        f=self.ref_model.reference_fn(), 
-    #        inputs=X_batch, 
-    #        directions=self.Q.T
-    #        )  # (b, r, d)
-    #
-    #    # form cores
-    #    #Bs = jnp.einsum('di,bjd->bij', Q, Bs)  # (b, r, r)
-    #
-    #    # small SVD per sample
-    #    Ucores, Svals, _ = jax.vmap(lambda B_i: jnp.linalg.svd(B_i, full_matrices=False))(Bs)
-    #    
-    #    # truncate to top k
-    #    Ucores_k = Ucores[:, :, :self.k]  # (b, r, k)
-    #    
-    #    # lift back
-    #    Us = jnp.einsum('dr,brk->bdk', self.Q, Ucores_k)
-    #    Us = Us.transpose(0, 2, 1) # (b, k, d)
-    #
-    #    # explained variance per dir
-    #    Svals = Svals**2
-    #    Svals = Svals[:, :self.k]
-    #    row_sums = jnp.sum(Svals, axis=1, keepdims=True)  # shape (b, 1)
-    #    eps = 1e-12
-    #    Svals = Svals / (row_sums + eps)
-    #    #jax.debug.print("Svals shape {}", Svals.shape)
-    #    #jax.debug.print("Svals entry 0 {}", Svals[0])
-    #    
-    #    local_dirs = safe_normalize_vectors(Us, axis=-1)
-    #    return local_dirs, Svals
+        B = jnp.mean(Bs, axis=0)  # (r, d)
+        #jax.debug.print("B.shape {shape}", shape=B.shape)
 
+        # SVD on B
+        U_tilde, S, _ = jnp.linalg.svd(B, full_matrices=False) # (r, r)
+        #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)  
 
+        # lift back
+        U = self.Q @ U_tilde  # (d, r)
+        U = U.T # (r, d)
+        #jax.debug.print("U.shape {shape}", shape=U.shape)
+
+        # truncate to top k (k, r)
+        U = U[:self.k, :]  # (k, d)
+        S_vals = S[:self.k]  # (k,)
+        S_vals = S_vals**2 / jnp.sum(S**2)
+
+        dirs = safe_normalize_vectors(U, axis=-1) # (k, d) take rows as directions
+
+        return dirs, S_vals
+
+        
 
 
 

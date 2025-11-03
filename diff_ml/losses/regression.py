@@ -48,7 +48,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
     TODO
     """
 
-    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "streamingOjas", "fullHessian"]:
+    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "streamingOjas", "streamingOjasLite", "fullHessian"]:
         raise ValueError("variant must be either random, pcady, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
 
     iteration_data = {}
@@ -108,7 +108,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         mode = "per_input"
         iteration_data["directions"] = dirs_per_x
         
-    elif variant == "streamingOjas":
+    elif variant == "streamingOjas" or variant == "streamingOjasLite":
         mode = "batch_averaged"
         directions = dirs_per_x
         iteration_data["directions"] = directions
@@ -155,9 +155,24 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
 
 
     else: # none (full Hessian)
-        # true Hessians via jax.hessian for comparison
-        target_hvps = vmap(jax.hessian(ref_fn))(x)
-        pred_hvps = vmap(jax.hessian(MakeScalar(model)))(x)
+        ## true Hessians via jax.hessian for comparison
+        #target_hvps = vmap(jax.hessian(ref_fn))(x)
+        #pred_hvps = vmap(jax.hessian(MakeScalar(model)))(x)
+
+        import jax.numpy as jnp
+        directions = jnp.eye(ref_model.n_dims)  # identity directions for full Hessian
+        # targets
+        target_hvps = hvp_batch(
+            f=ref_fn,
+            inputs=x, 
+            directions=directions
+        )
+        # predictions
+        pred_hvps = hvp_batch(
+            f=MakeScalar(model),
+            inputs=x, 
+            directions=directions
+        )
         
 
     #### ---- compute 2nd order loss ---- ####

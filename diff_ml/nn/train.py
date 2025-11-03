@@ -96,7 +96,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             # approximation metrics for 2nd order
             if not variant == "fullHessian" and do_approx_metrics:
                 u_H = iter_data["directions"]
-                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady", "streamingOjas"):
+                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady", "streamingOjas", "streamingOjasLite"):
                     iter_data["approximation metrics ref"] = approx_metrics(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
@@ -185,7 +185,7 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
         dirs_per_x = None
         Svals = None
         # update sketch and pass directions for loss
-        if variant == "streaming" or variant == "streamingOjas":
+        if variant == "streaming" or variant == "streamingOjas" or variant == "streamingOjasLite":
             if sketch is None:
                 raise ValueError("sketch must be provided for \'streaming\' variant")
             sketch, refinement_directions, Svals = sketch.update_batch(batch.x)
@@ -294,7 +294,7 @@ def train(
                 H_true = test_data.ddy.reshape(b, d, d)
                 H_pred = test_pred_ddys.reshape(b, d, d)
 
-                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD" or variant == "streamingOjas":
+                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD" or variant == "streamingOjas" or variant == "streamingOjasLite":
                     # batch-shared directions: U_norm  (k, d)
                     HU_true  = jnp.einsum('bij,kj->bki', H_true, U)   # (b, k, d)
                     HU_pred  = jnp.einsum('bij,kj->bki', H_pred, U)   # (b, k, d)
