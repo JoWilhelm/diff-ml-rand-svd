@@ -48,13 +48,12 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
     TODO
     """
 
-    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:
+    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "streamingOjas", "fullHessian"]:
         raise ValueError("variant must be either random, pcady, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
 
     iteration_data = {}
 
-    x = batch.x
-
+    x = batch.x # (b, d)
     
     k = min(k, ref_model.n_dims)  # ensure k does not exceed the number of dimensions
 
@@ -105,11 +104,15 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
                                         )
         iteration_data["directions"] = dirs_per_x
     
-    else: # streaming
+    elif variant == "streaming":
         mode = "per_input"
         iteration_data["directions"] = dirs_per_x
         
-
+    elif variant == "streamingOjas":
+        mode = "batch_averaged"
+        directions = dirs_per_x
+        iteration_data["directions"] = directions
+        
 
 
     #### ---- get 2nd order targets and predictions via HVPs ---- ####
