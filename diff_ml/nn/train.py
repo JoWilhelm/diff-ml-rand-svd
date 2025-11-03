@@ -73,7 +73,7 @@ class WeightedSurrogate(eqx.Module):
 
 
 
-def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
+def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, p:int, q:int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
     combining 0th, 1st, 2nd and 3rd order losses with either equal weights or learnable weights
     """
@@ -91,7 +91,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
         L1 = first_order_loss_fn(model, batch)
         
         if variant not in ["value", "1st"]:
-            (L2, iter_data) = second_order_loss_fn(model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k)
+            (L2, iter_data) = second_order_loss_fn(model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, p, q)
             
             # approximation metrics for 2nd order
             if not variant == "fullHessian" and do_approx_metrics:
@@ -171,7 +171,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
 
 
-def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
+def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, p: int, q: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
     TODO
     """
@@ -194,7 +194,7 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
         # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(
             total_loss_fn, has_aux=True
-        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, learnable_loss_weights, do_approx_metrics)
+        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, p, q, learnable_loss_weights, do_approx_metrics)
 
         # optimizer step
         updates, opt_state = optim.update(grads, opt_state, weighted_model)
@@ -219,6 +219,8 @@ def train(
     sketch: StreamingHessianSketch | None,
     variant: str,
     k: int,
+    p: int,
+    q: int,
     learnable_loss_weights: bool = True,
     do_approx_metrics: bool = False,
     do_test_eval: bool = True
@@ -234,7 +236,7 @@ def train(
     weighted_model = WeightedSurrogate(base=model)
     
     # setup training
-    train_step = make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_weights, do_approx_metrics)
+    train_step = make_train_step(ref_model, optim, batch_size, variant, k, p, q, learnable_loss_weights, do_approx_metrics)
     opt_state = optim.init(eqx.filter(weighted_model, eqx.is_array))
     train_loss = jnp.zeros(1)
     n_steps = n_epochs * n_batches_per_epoch
