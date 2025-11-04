@@ -308,26 +308,52 @@ class StreamingHessianSketchOjasLite(eqx.Module):
 
 
 
+    #def update_batch(self, X_batch):
+    #    eta = self.beta
+    #
+    #    # --- Oja residual part (exploit) ---
+    #    B = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
+    #    B = jnp.transpose(B, (0, 2, 1))                                      # (b, d, r)
+    #    QT_B = jnp.einsum('rd,bdj->brj', self.Q.T, B)                          # (b, r, r)
+    #    proj_q = jnp.einsum('dr,brs->bds', self.Q, QT_B)                      # (b, d, r)
+    #    delta_q = jnp.mean(B - proj_q, axis=0)                                # (d, r)
+    #
+    #    # --- small exploration on deflated Omega (explore) ---
+    #    Omega_perp = self.Omega - self.Q @ (self.Q.T @ self.Omega)             # (d, r)
+    #    # optional: orthonormalize probes to improve conditioning
+    #    Omega_perp, _ = jnp.linalg.qr(Omega_perp)                              # (d, r)
+    #    dY = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T)   # (b, r, d)
+    #    delta_o = jnp.mean(jnp.transpose(dY, (0, 2, 1)), axis=0)               # (d, r)
+    #
+    #    # blend (epsilon small, e.g. 0.05)
+    #    eps = 0.05
+    #    delta = delta_q + eps * delta_o
+    #
+    #    # update and re-orth
+    #    Q_new = self.Q + eta * delta
+    #    Q_new, _ = jnp.linalg.qr(Q_new)
+    #
+    #    sketch_new = replace(self, Q=Q_new)
+    #    local_dirs, Svals = sketch_new.local_directions_batch(X_batch)
+    #    return sketch_new, local_dirs, Svals
+    
     def update_batch(self, X_batch):
         eta = self.beta
     
         # --- Oja residual part (exploit) ---
         B = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
-        B = jnp.transpose(B, (0, 2, 1))                                      # (b, d, r)
-        QT_B = jnp.einsum('rd,bdj->brj', self.Q.T, B)                          # (b, r, r)
-        proj_q = jnp.einsum('dr,brs->bds', self.Q, QT_B)                      # (b, d, r)
-        delta_q = jnp.mean(B - proj_q, axis=0)                                # (d, r)
-    
-        # --- small exploration on deflated Omega (explore) ---
-        Omega_perp = self.Omega - self.Q @ (self.Q.T @ self.Omega)             # (d, r)
-        # optional: orthonormalize probes to improve conditioning
-        Omega_perp, _ = jnp.linalg.qr(Omega_perp)                              # (d, r)
-        dY = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T)   # (b, r, d)
-        delta_o = jnp.mean(jnp.transpose(dY, (0, 2, 1)), axis=0)               # (d, r)
-    
+        B = jnp.mean(B, axis=0).T  # (d, r)
+        B_perp = B - self.Q @ (self.Q.T @ B)  # (d, r)
+        
+        ## --- small exploration on deflated Omega (explore) ---
+        dY = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Omega.T)   # (b, r, d)
+        dy = jnp.mean(dY, axis=0).T  # (d, r)
+        dy_perp = dy - self.Q @ (self.Q.T @ dy)  # (d, r)
+        
+        
         # blend (epsilon small, e.g. 0.05)
         eps = 0.05
-        delta = delta_q + eps * delta_o
+        delta = B_perp + eps * dy_perp
     
         # update and re-orth
         Q_new = self.Q + eta * delta
@@ -337,7 +363,6 @@ class StreamingHessianSketchOjasLite(eqx.Module):
         local_dirs, Svals = sketch_new.local_directions_batch(X_batch)
         return sketch_new, local_dirs, Svals
     
-
     
     def local_directions_batch(self, X_batch):
        
