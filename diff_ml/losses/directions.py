@@ -479,3 +479,56 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k):
     v_norm = v_raw / (jnp.linalg.norm(v_raw, axis=-1, keepdims=True) + 1e-12)
     w_norm = w_raw / (jnp.linalg.norm(w_raw, axis=-1, keepdims=True) + 1e-12)
     return v_norm, w_norm
+
+
+
+
+
+
+
+
+
+def get_3rd_rand_SVD_directions2(ref_model, f, x, U_H, k):
+    """
+    TODO
+    """
+
+    d = ref_model.n_dims
+    
+    subspace_dirs = U_H[:k, :]  # (k, d)
+
+    # build the restricted operator A = E[T(v_i, w_j, :)]
+    A = t3vp_batch(
+        f=f,
+        inputs=x, 
+        v_dirs=subspace_dirs,
+        w_dirs=subspace_dirs
+    ) # (b, k, k, d)
+    A = jnp.mean(A, axis=0)  # (k, k, d)
+    A = jnp.transpose(A, (2, 0, 1)) # (d, k, k)
+    A_flat = jnp.reshape(A, (d, k*k))  # (d, k*k)
+    
+    # SVD on A_flat
+    # keep Vt because we are interested in which pairs of input directions are most important
+    _, _, Vt = jnp.linalg.svd(A_flat, full_matrices=False)
+    #jax.debug.print("Vt.shape {shape}", shape=Vt.shape)  
+
+    r = min(k, Vt.shape[0])
+    Vt_r = Vt[:r, :]                   # (r, k*k)
+
+    # extract leading v (left singular vector) and leading w (right singular vector) for each pair
+    def _one_pair(v_pair_flat):
+        M = jnp.reshape(v_pair_flat, (k, k))  # (k, k)
+        Uhat, _, VhatT = jnp.linalg.svd(M, full_matrices=False) # (k, k)
+        left = Uhat[:, 0]  # leading left singular vector (k,)
+        right = VhatT[0, :]  # leading right singular vector (k,)
+
+        #lift from hessian subspace to input space
+        v = jnp.einsum('dk,k->d', subspace_dirs.T, left)  # (d,)
+        w = jnp.einsum('dk,k->d', subspace_dirs.T, right)  # (d,)
+        v = safe_normalize_vectors(v, axis=-1)
+        w = safe_normalize_vectors(w, axis=-1)
+        return v, w
+    
+    v_dirs, w_dirs = jax.vmap(_one_pair)(Vt_r)  # (r, d), (r, d)
+    return v_dirs, w_dirs
