@@ -12,12 +12,6 @@ from diff_ml.utils import mse, MakeScalar, generate_random_vectors
 from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions, PCA_of_dydx_directions
 from diff_ml.ad import hvp_batch, t3vp_batch, hvp_batch_per_input
 
-# TODO remove later
-from diff_ml.losses.directions import get_3rd_rand_SVD_directions3
-from diff_ml.losses.directions import get_3rd_rand_SVD_directions4
-from diff_ml.losses.directions import get_3rd_rand_SVD_directions5
-
-
 
 def standard_loss_fn(model, batch: DifferentialData):
     """
