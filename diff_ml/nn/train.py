@@ -134,6 +134,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             c = 1/4
             d = 1/4
             total = a*L0 + b*L1 + c*L2 + d*L3
+            #total = L3
             iter_data["eff_w_norm"] = [a, b, c, d]
             return total, iter_data
         else:

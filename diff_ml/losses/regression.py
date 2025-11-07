@@ -12,6 +12,10 @@ from diff_ml.utils import mse, MakeScalar, generate_random_vectors
 from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_directions_per_x, get_3rd_rand_SVD_directions, PCA_of_dydx_directions
 from diff_ml.ad import hvp_batch, t3vp_batch, hvp_batch_per_input
 
+# TODO remove later
+from diff_ml.losses.directions import get_3rd_rand_SVD_directions3
+from diff_ml.losses.directions import get_3rd_rand_SVD_directions4
+from diff_ml.losses.directions import get_3rd_rand_SVD_directions5
 
 
 
@@ -209,8 +213,12 @@ def third_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mod
                                     f=ref_fn,
                                     x=x,
                                     U_H=U_H,
-                                    k=k
+                                    k=k,
+                                    key=key
                                     )
+    #rand_dirs = generate_random_vectors((k, ref_model.n_dims), key=key, normalize=True)
+    #dirs_v = rand_dirs
+    #dirs_w = rand_dirs
 
     # T3VPs targets
     target_t3vps = t3vp_batch(

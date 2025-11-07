@@ -6,7 +6,7 @@ import equinox as eqx
 from jaxtyping import PRNGKeyArray
 
 from diff_ml.utils import generate_random_vectors, safe_normalize_vectors
-from diff_ml.ad import hvp_batch, t3vp_batch
+from diff_ml.ad import hvp_batch, t3vp_batch, t3vp
 from diff_ml.reference_models.reference_model_class import ReferenceModel
 
 from dataclasses import replace 
@@ -418,16 +418,99 @@ class StreamingHessianSketchOjasLite(eqx.Module):
 
 
 
-def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k):
+#def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
+#    """
+#    TODO
+#    """
+#
+#    d = ref_model.n_dims
+#    
+#    ## use U_H as guided sketch directions
+#    sketch_directions_v = U_H[:k, :]
+#    sketch_directions_w = U_H[:k, :]
+#
+#    # contract two modes of T with two sets of sketch directions
+#    Y = t3vp_batch(
+#        f=f,
+#        inputs=x, 
+#        v_dirs=sketch_directions_v,
+#        w_dirs=sketch_directions_w
+#    ) # (b, k, k, d)
+#    Y = jnp.mean(Y, axis=0)  # (k, k, d)
+#    Y = jnp.transpose(Y, (2, 0, 1)) # (d, k, k)
+#
+#    # orthprhonormalize Y
+#    Y_flat = jnp.reshape(Y, (d, k*k))  # (d, k*k)
+#    Q, _ = jnp.linalg.qr(Y_flat, mode="reduced") # (d, q) q = min(d, k*k) 
+#    #jax.debug.print("Q.shape {shape}", shape=Q.shape)
+#
+#
+#
+#    # contract the remaining mode of T
+#    # analogous to B = H @ Q for Hessian
+#    B = Q.T @ Y_flat # (q, k*k)
+#
+#    # SVD on B
+#    # keep Vt because we are intrested in whihc pairs of sketch directions are most important
+#    _, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
+#    #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)  
+#
+#    # truncate to top r=k
+#    r = k
+#    S = S[:r]                         # (r,)
+#    V = Vt[:r, :].T                   # (k*k, r)
+#    V_kk_r = V.reshape(k, k, r)       # (k, k, r)
+#
+#    # lift back to (d, d) matirces
+#    #lift right-singular directions from sketch space back to (d,d) matrices via sketch bases
+#    Qv_T = sketch_directions_v.T      # (d, k)
+#    Qw_T = sketch_directions_w.T      # (d, k)
+#    # first left multiply
+#    A = jnp.einsum('dk,kmr->dmr', Qv_T, V_kk_r) # (d, k, r)
+#    # then right multiply 
+#    Zi_all_d_r_d = jnp.einsum('imr,mj->irj', A, Qw_T.T) # (d, r, d)
+#    # reorder
+#    Zi_all = jnp.transpose(Zi_all_d_r_d, (1, 0, 2)) # (r, d, d)
+#
+#    # extact leading v (left singular vector) and leading w (right singular vector) for each Zi  
+#    Uhat, _, VhatT = jnp.linalg.svd(Zi_all, full_matrices=False) # Uhat (r, d, d), VhatT (r, d, d)
+#    v_raw = Uhat[:, :, 0]          # (r, d)
+#    w_raw = VhatT[:, 0, :]         # (r, d)
+#
+#    # Normalize each vector
+#    v_norm = v_raw / (jnp.linalg.norm(v_raw, axis=-1, keepdims=True) + 1e-12)
+#    w_norm = w_raw / (jnp.linalg.norm(w_raw, axis=-1, keepdims=True) + 1e-12)
+#    return v_norm, w_norm
+
+
+
+
+
+
+
+
+
+def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
     """
     TODO
     """
 
     d = ref_model.n_dims
     
-    ## use U_H as guided sketch directions
-    sketch_directions_v = U_H[:k, :]
-    sketch_directions_w = U_H[:k, :]
+    # use U_H as guided sketch directions
+    seed_dirs = U_H[:k, :]  # (k, d)
+    #sketch_directions_v = seed_dirs
+    #sketch_directions_w = seed_dirs
+    
+    # TODO maybe concat with some random ones?
+    n_rand = k
+    key, subkey = jax.random.split(key)
+    rand_v = jax.random.normal(subkey, (n_rand, d)) if n_rand > 0 else jnp.empty((0, d))
+    key, subkey = jax.random.split(key)
+    rand_w = jax.random.normal(subkey, (n_rand, d)) if n_rand > 0 else jnp.empty((0, d))
+    sketch_directions_v = jnp.concatenate([seed_dirs, rand_v], axis=0)
+    sketch_directions_w = jnp.concatenate([seed_dirs, rand_w], axis=0)
+
 
     # contract two modes of T with two sets of sketch directions
     Y = t3vp_batch(
@@ -435,100 +518,30 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k):
         inputs=x, 
         v_dirs=sketch_directions_v,
         w_dirs=sketch_directions_w
-    ) # (b, k, k, d)
-    Y = jnp.mean(Y, axis=0)  # (k, k, d)
-    Y = jnp.transpose(Y, (2, 0, 1)) # (d, k, k)
+    ) # (b, r, r, d)
 
-    # orthprhonormalize Y
-    Y_flat = jnp.reshape(Y, (d, k*k))  # (d, k*k)
-    Q, _ = jnp.linalg.qr(Y_flat, mode="reduced") # (d, q) q = min(d, k*k) 
+    #average over inputs to get E_x T(., v_i, w_j)
+    Y = jnp.mean(Y, axis=0)  # (r, r, d)
+    Y = jnp.transpose(Y, (2, 0, 1)) # (d, r, r)
+    Y_flat = jnp.reshape(Y, (d, -1))  # (d, r*r)
+    
+    # orthprhonormal basis Q for range(Y)
+    Q, _ = jnp.linalg.qr(Y_flat, mode="reduced") # (d, s) s = min(d, r*r) 
     #jax.debug.print("Q.shape {shape}", shape=Q.shape)
-
-    # contract the remaining mode of T
-    # analogous to B = H @ Q for Hessian
-    B = Q.T @ Y_flat # (q, k*k)
-
-    # SVD on B
-    # keep Vt because we are intrested in whihc pairs of sketch directions are most important
-    _, S, Vt = jnp.linalg.svd(B, full_matrices=False) # (k, k)
-    #jax.debug.print("U_tilde.shape {shape}", shape=U_tilde.shape)  
-
-    # truncate to top r=k
-    r = k
-    S = S[:r]                         # (r,)
-    V = Vt[:r, :].T                   # (k*k, r)
-    V_kk_r = V.reshape(k, k, r)       # (k, k, r)
-
-    # lift back to (d, d) matirces
-    #lift right-singular directions from sketch space back to (d,d) matrices via sketch bases
-    Qv_T = sketch_directions_v.T      # (d, k)
-    Qw_T = sketch_directions_w.T      # (d, k)
-    # first left multiply
-    A = jnp.einsum('dk,kmr->dmr', Qv_T, V_kk_r) # (d, k, r)
-    # then right multiply 
-    Zi_all_d_r_d = jnp.einsum('imr,mj->irj', A, Qw_T.T) # (d, r, d)
-    # reorder
-    Zi_all = jnp.transpose(Zi_all_d_r_d, (1, 0, 2)) # (r, d, d)
-
-    # extact leading v (left singular vector) and leading w (right singular vector) for each Zi  
-    Uhat, _, VhatT = jnp.linalg.svd(Zi_all, full_matrices=False) # Uhat (r, d, d), VhatT (r, d, d)
-    v_raw = Uhat[:, :, 0]          # (r, d)
-    w_raw = VhatT[:, 0, :]         # (r, d)
-
-    # Normalize each vector
-    v_norm = v_raw / (jnp.linalg.norm(v_raw, axis=-1, keepdims=True) + 1e-12)
-    w_norm = w_raw / (jnp.linalg.norm(w_raw, axis=-1, keepdims=True) + 1e-12)
-    return v_norm, w_norm
+    s = Q.shape[1]
 
 
-
-
-
-
-
-
-
-def get_3rd_rand_SVD_directions2(ref_model, f, x, U_H, k):
-    """
-    TODO
-    """
-
-    d = ref_model.n_dims
+    # instead of SVD on B = Q.T T3, define energy function to rank directions in Q
+    def one_energy(q):
+        tvps = jax.vmap(lambda primal: t3vp(f, primal, q, q))(x)
+        mean = jnp.mean(tvps, axis=0)  # (d,)
+        return jnp.sum(mean**2)
     
-    subspace_dirs = U_H[:k, :]  # (k, d)
+    energies = jax.vmap(one_energy)(Q.T)  # (s,)
+    ranked_indices = jnp.argsort(-energies)[:k]  # descending order
+    U = Q[:, ranked_indices]  # (d, k)
+    U = U.T  # (k, d)
+    U = safe_normalize_vectors(U, axis=-1)
+    return U, U  # return same for v and w directions
 
-    # build the restricted operator A = E[T(v_i, w_j, :)]
-    A = t3vp_batch(
-        f=f,
-        inputs=x, 
-        v_dirs=subspace_dirs,
-        w_dirs=subspace_dirs
-    ) # (b, k, k, d)
-    A = jnp.mean(A, axis=0)  # (k, k, d)
-    A = jnp.transpose(A, (2, 0, 1)) # (d, k, k)
-    A_flat = jnp.reshape(A, (d, k*k))  # (d, k*k)
-    
-    # SVD on A_flat
-    # keep Vt because we are interested in which pairs of input directions are most important
-    _, _, Vt = jnp.linalg.svd(A_flat, full_matrices=False)
-    #jax.debug.print("Vt.shape {shape}", shape=Vt.shape)  
 
-    r = min(k, Vt.shape[0])
-    Vt_r = Vt[:r, :]                   # (r, k*k)
-
-    # extract leading v (left singular vector) and leading w (right singular vector) for each pair
-    def _one_pair(v_pair_flat):
-        M = jnp.reshape(v_pair_flat, (k, k))  # (k, k)
-        Uhat, _, VhatT = jnp.linalg.svd(M, full_matrices=False) # (k, k)
-        left = Uhat[:, 0]  # leading left singular vector (k,)
-        right = VhatT[0, :]  # leading right singular vector (k,)
-
-        #lift from hessian subspace to input space
-        v = jnp.einsum('dk,k->d', subspace_dirs.T, left)  # (d,)
-        w = jnp.einsum('dk,k->d', subspace_dirs.T, right)  # (d,)
-        v = safe_normalize_vectors(v, axis=-1)
-        w = safe_normalize_vectors(w, axis=-1)
-        return v, w
-    
-    v_dirs, w_dirs = jax.vmap(_one_pair)(Vt_r)  # (r, d), (r, d)
-    return v_dirs, w_dirs
