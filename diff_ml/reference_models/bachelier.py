@@ -28,7 +28,43 @@ class EuropeanPayoff:
     @staticmethod
     def put(maturity_prices: Float[ArrayLike, " n"], strike_prices: Float[ScalarLike, ""]) -> Float[Array, " n"]:
         return jnp.maximum(jnp.subtract(strike_prices, maturity_prices), 0.0)
+    @staticmethod
+    def smoothed_call(
+        maturity_prices: Float[ArrayLike, " n"],
+        strike_prices: Float[ScalarLike, ""],
+        eps = 0.01,
+    ) -> Float[Array, " n"]:
+        """
+        C^2-smoothed call payoff.
 
+        - For S <= K - eps:        0
+        - For S >= K + eps:        S - K
+        - For |S - K| < eps:       smooth polynomial bridge
+        """
+        S = jnp.asarray(maturity_prices)
+        K = jnp.asarray(strike_prices)
+        eps = jnp.asarray(eps)
+
+        # distance to strike
+        t = S - K
+
+        # polynomial segment on (-eps, eps)
+        # p(t) = -t^4/(16 eps^3) + 3 t^2/(8 eps) + (1/2) t + 3 eps/16
+        inner = (
+            - (t ** 4) / (16.0 * eps ** 3)
+            + 3.0 * (t ** 2) / (8.0 * eps)
+            + 0.5 * t
+            + 3.0 * eps / 16.0
+        )
+
+        zero = jnp.zeros_like(t)
+        linear = t  # == (S - K)
+
+        return jnp.where(
+            t <= -eps,
+            zero,
+            jnp.where(t >= eps, linear, inner),
+        )
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     """TODO: ."""
@@ -87,6 +123,21 @@ class Bachelier(ReferenceModel):
         self.weights = weights / jnp.sum(weights)
         self.n_dims = basket_dim
 
+
+        # fix cov once
+        key, subkey = jrandom.split(self.key_train)
+        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
+        # generate random volatilities
+        key, subkey = jrandom.split(key)
+        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
+        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
+        # It makes plotting the data more convenient.
+        normalized_vols = (self.weights * vols).reshape((-1, 1))
+        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
+        vols = vols * self.vol_basket / v
+        diag_v = jnp.diag(vols)
+        self.cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
+        
    
    
    
@@ -100,7 +151,7 @@ class Bachelier(ReferenceModel):
         """TODO: ."""
         spots_end = xs + paths
         baskets_end = jnp.dot(spots_end, weights)
-        pay = EuropeanPayoff.call(baskets_end, strike_price)
+        pay = EuropeanPayoff.smoothed_call(baskets_end, strike_price)
         return pay
 
     @staticmethod
@@ -113,11 +164,11 @@ class Bachelier(ReferenceModel):
         """TODO: ."""
         spots_end_a = xs + paths
         baskets_end_a = jnp.dot(spots_end_a, weights)
-        pay_a = EuropeanPayoff.call(baskets_end_a, strike_price)
+        pay_a = EuropeanPayoff.smoothed_call(baskets_end_a, strike_price)
 
         spots_end_b = xs - paths
         baskets_end_b = jnp.dot(spots_end_b, weights)
-        pay_b = EuropeanPayoff.call(baskets_end_b, strike_price)
+        pay_b = EuropeanPayoff.smoothed_call(baskets_end_b, strike_price)
 
         pay = 0.5 * (pay_a + pay_b)
         return pay
@@ -139,37 +190,16 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x) -> Scalar:
-        n_paths = 100000
+        n_paths = 1000
         
         x = jnp.asarray(x)
-
-
-        key = self.key_train
-
-        # generate random correlation matrix
-        key, subkey = jrandom.split(key)
-        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
-
-        # generate random volatilities
-        key, subkey = jrandom.split(key)
-        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
-
-        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
-        # It makes plotting the data more convenient.
-        normalized_vols = (self.weights * vols).reshape((-1, 1))
-        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
-        vols = vols * self.vol_basket / v
+        cov = self.cov
 
         t_delta = self.t_maturity - self.t_exposure
 
-        diag_v = jnp.diag(vols)
-        cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
-        key, subkey = jrandom.split(key)
-        
-        # Cholesky
+        # simulations using fixed cov and seed for paths
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
-        # simulations
-        normal_samples = jrandom.normal(subkey, shape=(n_paths, self.n_dims))
+        normal_samples = jrandom.normal(self.key_train, shape=(n_paths, self.n_dims))
         paths = normal_samples @ chol.T
         
         
@@ -182,8 +212,6 @@ class Bachelier(ReferenceModel):
         
         payoffs = payoff_fn(x[jnp.newaxis, :], paths)
 
-
-        #self.key_train = key
         return jnp.mean(payoffs, axis=0)
 
 
@@ -192,69 +220,120 @@ class Bachelier(ReferenceModel):
 
     def reference_fn(self):
         #return self.analytic_basket_price_single_x 
-        return self.simulated_basket_price_single_x 
+        return partial(self.simulated_basket_price_single_x)
 
 
 
-
-    def sample(self, key: PRNGKeyArray, n_samples: int, order=1) -> DifferentialData:
-        """TODO: ."""
-
+    def sample(self, key:PRNGKeyArray, n_samples:int, order=1) -> DifferentialData:
         if order > 1:
             raise ValueError("Differential data of order > 1 not supported via sample(). Use analytic() for that, e.g. for test set generation.")
 
-        #  w.l.o.g., initialize spots, i.e. S_0, as all ones
+        cov = self.cov
         spots_0 = jnp.repeat(1.0, self.n_dims)
-
-        # generate random correlation matrix
-        key, subkey = jrandom.split(key)
-        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
-
-        # generate random volatilities
-        key, subkey = jrandom.split(key)
-        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
-
-        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
-        # It makes plotting the data more convenient.
-        normalized_vols = (self.weights * vols).reshape((-1, 1))
-        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
-        vols = vols * self.vol_basket / v
-
         t_delta = self.t_maturity - self.t_exposure
-
-        diag_v = jnp.diag(vols)
-        cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
-        key, subkey = jrandom.split(key)
-        
-        # Cholesky
+        # simulations using fixed cov and seed for paths
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
         # increase vols for simulation of xs so we have more samples in the wings
         chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
-        # simulations
-        normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
-        paths_0 = normal_samples[0] @ chol_0.T
-        paths_1 = normal_samples[1] @ chol.T
+        # fresh batch key for S0, fixed key for paths
+        normals_x = jrandom.normal(key, shape=(n_samples, self.n_dims))
+        paths_0 = normals_x @ chol_0.T
+        x = spots_0 + paths_0
         
-        
 
-        spots_1 = spots_0 + paths_0
-        if self.use_antithetic:
-            payoff_fn = Bachelier.antithetic_payoff
-        else:
-            payoff_fn = Bachelier.payoff
+        value_and_grad_fn = jax.value_and_grad(self.reference_fn())
+        y, dy = jax.vmap(value_and_grad_fn)(x)
 
-        payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
-
-        payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
-        differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
 
         return DifferentialData(
             order = 1,
-            x = spots_1,
-            y = payoffs_vjp,
-            dy = differentials_vjp
+            x = x,
+            y = y,
+            dy = dy
         )
 
+
+
+
+
+
+#    def sample(self, key: PRNGKeyArray, n_samples: int, order=1) -> DifferentialData:
+#        """TODO: ."""
+#
+#        if order > 1:
+#            raise ValueError("Differential data of order > 1 not supported via sample(). Use analytic() for that, e.g. for test set generation.")
+#
+#        n_paths = 100
+#        
+#        cov = self.cov
+#        
+#        
+#        
+#        #  w.l.o.g., initialize spots, i.e. S_0, as all ones
+#        spots_0 = jnp.repeat(1.0, self.n_dims)
+#        t_delta = self.t_maturity - self.t_exposure
+#        
+#        
+#        
+#        ## generate random correlation matrix
+#        #key, subkey = jrandom.split(key)
+#        #correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
+#        #
+#        ## generate random volatilities
+#        #key, subkey = jrandom.split(key)
+#        #vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
+#        #
+#        ## W.l.o.g., normalize the volatilities for a given volatility of the basket.
+#        ## It makes plotting the data more convenient.
+#        #normalized_vols = (self.weights * vols).reshape((-1, 1))
+#        #v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
+#        #vols = vols * self.vol_basket / v
+#        #
+#        #diag_v = jnp.diag(vols)
+#        #cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
+#        #key, subkey = jrandom.split(key)
+#        
+#
+#
+#        # simulations using fixed cov and seed for paths
+#        chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
+#        # increase vols for simulation of xs so we have more samples in the wings
+#        chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
+#
+#        #normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
+#        #paths_0 = normal_samples[0] @ chol_0.T
+#        #paths_1 = normal_samples[1] @ chol.T
+#
+#
+#        # fresh batch key for S0, fixed key for paths
+#        normals_x = jrandom.normal(key, shape=(n_samples, self.n_dims))
+#        paths_0 = normals_x @ chol_0.T
+#        spots_1 = spots_0 + paths_0
+#        
+#        normal_samples_paths_1 = jrandom.normal(self.key_train, shape=(n_paths, self.n_dims))
+#        paths_1 = normal_samples_paths_1 @ chol.T
+#
+#        if self.use_antithetic:
+#            payoff_fn = Bachelier.antithetic_payoff
+#        else:
+#            payoff_fn = Bachelier.payoff
+#
+#        payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
+#
+#
+#        # TODO vectorize over spots_1 and average paths?
+#
+#
+#        payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
+#        differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
+#
+#        return DifferentialData(
+#            order = 1,
+#            x = spots_1,
+#            y = payoffs_vjp,
+#            dy = differentials_vjp
+#        )
+#
 
 
 

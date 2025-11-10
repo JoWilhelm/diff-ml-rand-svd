@@ -2,12 +2,68 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrandom
 
-from jaxtyping import Array, Float, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray, ArrayLike, ScalarLike
 
 from diff_ml.utils import Range, normalize
 from diff_ml.typing import DifferentialData, Scalar
 from diff_ml.reference_models.reference_model_class import ReferenceModel    
 from diff_ml.plotting import plot_3d_differential_data
+
+from functools import partial
+
+
+
+#class EuropeanPayoff:
+#    @staticmethod
+#    def call(maturity_prices: Float[ArrayLike, " n"], strike_prices: Float[ScalarLike, ""]) -> Float[Array, " n"]:
+#        return jnp.maximum(jnp.subtract(maturity_prices, strike_prices), 0.0)
+#    @staticmethod
+#    def put(maturity_prices: Float[ArrayLike, " n"], strike_prices: Float[ScalarLike, ""]) -> Float[Array, " n"]:
+#        return jnp.maximum(jnp.subtract(strike_prices, maturity_prices), 0.0)
+#    @staticmethod
+#    def smoothed_call(
+#        maturity_prices: Float[ArrayLike, " n"],
+#        strike_prices: Float[ScalarLike, ""],
+#        eps = 0.01,
+#    ) -> Float[Array, " n"]:
+#        """
+#        C^2-smoothed call payoff.
+#
+#        - For S <= K - eps:        0
+#        - For S >= K + eps:        S - K
+#        - For |S - K| < eps:       smooth polynomial bridge
+#        """
+#        S = jnp.asarray(maturity_prices)
+#        K = jnp.asarray(strike_prices)
+#        eps = jnp.asarray(eps)
+#
+#        # distance to strike
+#        t = S - K
+#
+#        # polynomial segment on (-eps, eps)
+#        # p(t) = -t^4/(16 eps^3) + 3 t^2/(8 eps) + (1/2) t + 3 eps/16
+#        inner = (
+#            - (t ** 4) / (16.0 * eps ** 3)
+#            + 3.0 * (t ** 2) / (8.0 * eps)
+#            + 0.5 * t
+#            + 3.0 * eps / 16.0
+#        )
+#
+#        zero = jnp.zeros_like(t)
+#        linear = t  # == (S - K)
+#
+#        return jnp.where(
+#            t <= -eps,
+#            zero,
+#            jnp.where(t >= eps, linear, inner),
+#        )
+#
+#
+#
+#sharpness = 1e-3
+#bias = sharpness
+#smooth_max_fn = lambda x: jax.nn.celu(x=x, alpha=sharpness) + bias
+
 
 
 class Heston(ReferenceModel):
@@ -142,8 +198,6 @@ class Heston(ReferenceModel):
         return price
     
 
-
-
     def closed_form_basket_price(self, basket_S0s, basket_v0s) -> Scalar:
         # vectorize single‐asset pricer over the basket axis
         prices = jax.vmap(self.closed_form_price)(basket_S0s, basket_v0s)
@@ -152,20 +206,181 @@ class Heston(ReferenceModel):
         return jnp.dot(self.basket_weights, prices) #+ 0.2 * interaction_term
     
 
+
+
+
+
+
+
+
+
+
+#
+#
+#    def payoff_basket(self, spot_ends):
+#        """
+#        spot_ends : (n_paths, basket_dim)
+#        """
+#        baskets_end = jnp.dot(spot_ends, self.basket_weights)
+#        payoff = EuropeanPayoff.smoothed_call(baskets_end, self.K)
+#        return payoff
+#    
+#
+#
+#    def volatility_path(self, vol_draws, v0: float):
+#        n_steps = len(vol_draws)
+#        dt = self.T / n_steps
+#
+#        def vol_path_iter(prev_vol_path, vol_draw):
+#            # v_truncated = smooth_max_cubic(prev_vol_path)
+#            v_truncated = smooth_max_fn(prev_vol_path)
+#            prev_path_contribution = prev_vol_path + self.kappa * dt * (self.theta - v_truncated)
+#            randomness = self.xi * jnp.sqrt(v_truncated * dt) * vol_draw
+#            current = prev_path_contribution + randomness
+#            return current, current # use current both for carry and for y
+#
+#        carry, vol_path = jax.lax.scan(vol_path_iter, jnp.array(v0), vol_draws, length=n_steps)
+#
+#        # we now have iteration 1 at position 0. Place initial v0 at the end and rotate into initial slot
+#        vol_path = jnp.roll(vol_path.at[-1].set(v0), 1)
+#        return vol_path
+#
+#
+#    def spot_path(self, spot_draws: Array, vol_path: Array, S0:float) -> Array:
+#        n_steps = len(spot_draws)
+#        dt = self.T / n_steps
+#
+#        def spot_path_iter(prev_spot_path, iter_pair):
+#            spot_draw = iter_pair[0]
+#            vol = iter_pair[1]
+#            # v_truncated = smooth_max_cubic(vol)
+#            v_truncated = smooth_max_fn(vol)
+#            path_new_spot = prev_spot_path * jnp.exp((self.r - 0.5 * v_truncated) * dt + jnp.sqrt(v_truncated * dt) * spot_draw)
+#            return path_new_spot, path_new_spot
+#
+#        iter_values = jnp.column_stack((spot_draws, vol_path))
+#        carry, spot_paths = jax.lax.scan(spot_path_iter, jnp.array(S0), iter_values, length=n_steps)
+#
+#        # we now have iteration 1 at position 0. Place initial S0 at the end and rotate into initial slot
+#        spot_paths = jnp.roll(spot_paths.at[-1].set(S0), 1)
+#        return spot_paths
+#
+#    
+#
+#    def correlated_draws(self, path_seed, n_steps:int=64):
+#        mean = jnp.zeros(2)
+#        cov = jnp.array([[1.0, self.rho], [self.rho, 1.0]])
+#
+#        correlated_samples = jrandom.multivariate_normal(path_seed, mean, cov, shape=(n_steps,))
+#        vol_draws = correlated_samples[:, 0]
+#        spot_draws = correlated_samples[:, 1]
+#        return vol_draws, spot_draws
+#
+#
+#
+#    def simulated_basket_payoff(self, S0s, v0s) -> Scalar:
+#        """
+#        Compute the Heston model European call price using Monte Carlo simulation.
+#
+#        Parameters:
+#        - S0s: initial spot prices for each asset in the basket (basket_dim,)
+#        - v0s: initial variances for each asset in the basket (basket_dim,)
+#       
+#        Returns:
+#        - Basket price of European call option under Heston model
+#        """
+#
+#        jax.debug.print("S0s shape: {s}", s=S0s.shape)
+#        jax.debug.print("v0s shape: {s}", s=v0s.shape)
+#        
+#        
+#        n_paths = 10
+#        path_seeds = jrandom.split(self.key_train, n_paths)
+#
+#        def _single_spot_end(path_seed, S0, v0):
+#            # sample noise steps for the path
+#            vol_draws, spot_draws = self.correlated_draws(path_seed)
+#            # build path
+#            vol_path  = self.volatility_path(vol_draws, v0)
+#            spot_path = self.spot_path(spot_draws, vol_path, S0)
+#            return spot_path[-1]  # return only the final spot price
+#
+#
+#
+#        def _single_path(path_seed, S0s, v0s):
+#            # for this MC path, we need one seed per asset
+#            asset_seeds = jrandom.split(path_seed, self.basket_dim)  # (basket_dim,)
+#
+#            # vectorize _single_asset_terminal_spot over assets
+#            terminal_spots = jax.vmap(
+#                _single_spot_end,
+#                in_axes=(0, 0, 0),
+#            )(asset_seeds, S0s, v0s)  # (basket_dim,)
+#            return terminal_spots  # (basket_dim,)
+#
+#        # vectorize over paths, broadcast S0s, v0s
+#        spot_ends = jax.vmap(
+#            _single_path,
+#            in_axes=(0, None, None),
+#        )(path_seeds, S0s, v0s)  # (n_paths, basket_dim)
+#
+#        # get payoffs
+#        payoffs = self.payoff_basket(spot_ends)
+#   
+#        return jnp.mean(payoffs)
+#
+
+
+
+
+
     def basket_price_x_flat(self, x_flat):
         z = x_flat.reshape(self.basket_dim, 2)
         S0s = z[:, 0]
         v0s = z[:, 1]
+
         return self.closed_form_basket_price(S0s, v0s)
+        #return self.simulated_basket_payoff(S0s, v0s)
        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   
+    
+    
+
+
+
+
+
+
+
+
+
     
     def normalized_wrapper(self, x_flat_normalized) -> Scalar:
         # un-normalize inputs x
         x_normalized_unflat = x_flat_normalized.reshape(self.basket_dim, 2)
         x_raw_unflat = x_normalized_unflat * self.x_std + self.x_mean
         x_raw_flat = x_raw_unflat.reshape(self.n_dims)
+
         # call in raw space
         y = self.basket_price_x_flat(x_raw_flat)
+        
+        
+        
         # re-normalize y
         y_normalized = (y - self.y_mean) / self.y_std
         return y_normalized    
@@ -199,7 +414,10 @@ class Heston(ReferenceModel):
 
     def sample_raw_ys(self, key: PRNGKeyArray, n_samples: int):
         S0s, v0s = self.sample_initial_states(key, n_samples)
+        
+        #ys = jax.vmap(self.closed_form_basket_price)(S0s, v0s)
         ys = jax.vmap(self.closed_form_basket_price)(S0s, v0s)
+        
         return ys
 
 
@@ -239,24 +457,6 @@ class Heston(ReferenceModel):
             ddyddx_normalized = H_full * scale[None, :, :]
             ddy = ddyddx_normalized
             
-            ## TODO make this also in flat space
-            ## TODO then x_mean and std also just flat
-            ## working with un-flat x_std (basket, 2)
-            #H_blocks = H_full.reshape(
-            #    n_samples,
-            #    self.basket_dim, 2,
-            #    self.basket_dim, 2
-            #) # (batch, basket, 2 basket, 2)
-            #
-            #scale_full = (self.x_std[:, :, None, None] * self.x_std[None, None, :, :]) / self.y_std
-            #
-            ## 4) broadcast and apply
-            #H_blocks_norm = H_blocks * scale_full[None, ...]
-            ## H_blocks_norm: (batch, n, 2, n, 2)
-            ##norm_values["H_scale_full"] = scale_full
-            #ddyddx_normalized = H_blocks_norm
-            #ddy = ddyddx_normalized
-
 
         if order >= 3:
             # 3rd order
