@@ -92,7 +92,7 @@ class Heston(ReferenceModel):
         - v0: initial variance
        
         Returns:
-        - call option price under Heston model
+        - european call option price under Heston model
         """
 
         sigma = self.xi # volatility of volatility
@@ -125,13 +125,13 @@ class Heston(ReferenceModel):
         def Psi(wi, Ci, Di):
             return jnp.exp(Ci * self.theta + Di * v0 + 1j * wi * log_term)
 
-        Psi_w      = Psi(w,      C_vec, D_vec)
+        Psi_w = Psi(w, C_vec, D_vec)
         Psi_w_minus_i = Psi(w - 1j, *jax.vmap(C_D)(w - 1j))
         Psi_minus_i = Psi(-1j, *C_D(-1j))
 
         # integrands for Pi1 and Pi2
         integrand1 = jnp.real(jnp.exp(-1j * w * jnp.log(self.K)) * Psi_w_minus_i / (1j * w * Psi_minus_i))
-        integrand2 = jnp.real(jnp.exp(-1j * w * jnp.log(self.K)) * Psi_w      / (1j * w))
+        integrand2 = jnp.real(jnp.exp(-1j * w * jnp.log(self.K)) * Psi_w         / (1j * w))
 
         # numerical integration via the trapezoidal rule
         Pi1 = 0.5 + (1.0 / jnp.pi) * jnp.trapezoid(integrand1, w)

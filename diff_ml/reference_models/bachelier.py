@@ -103,9 +103,6 @@ class Bachelier(ReferenceModel):
         pay = EuropeanPayoff.call(baskets_end, strike_price)
         return pay
 
-
-
-
     @staticmethod
     def antithetic_payoff(
         xs: Float[Array, "n_samples n_dims"],
@@ -139,12 +136,66 @@ class Bachelier(ReferenceModel):
         price = price.reshape((-1,))
         return price[0]
         
+        
+
+    def simulated_basket_price_single_x(self, x) -> Scalar:
+        n_paths = 100000
+        
+        x = jnp.asarray(x)
+
+
+        key = self.key_train
+
+        # generate random correlation matrix
+        key, subkey = jrandom.split(key)
+        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
+
+        # generate random volatilities
+        key, subkey = jrandom.split(key)
+        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
+
+        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
+        # It makes plotting the data more convenient.
+        normalized_vols = (self.weights * vols).reshape((-1, 1))
+        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
+        vols = vols * self.vol_basket / v
+
+        t_delta = self.t_maturity - self.t_exposure
+
+        diag_v = jnp.diag(vols)
+        cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
+        key, subkey = jrandom.split(key)
+        
+        # Cholesky
+        chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
+        # simulations
+        normal_samples = jrandom.normal(subkey, shape=(n_paths, self.n_dims))
+        paths = normal_samples @ chol.T
+        
+        
+        if self.use_antithetic:
+            payoff_fn = Bachelier.antithetic_payoff
+        else:
+            payoff_fn = Bachelier.payoff
+
+        payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
+        
+        payoffs = payoff_fn(x[jnp.newaxis, :], paths)
+
+
+        #self.key_train = key
+        return jnp.mean(payoffs, axis=0)
+
+
+
+
+
     def reference_fn(self):
-        return self.analytic_basket_price_single_x 
+        #return self.analytic_basket_price_single_x 
+        return self.simulated_basket_price_single_x 
 
 
-    
-    
+
 
     def sample(self, key: PRNGKeyArray, n_samples: int, order=1) -> DifferentialData:
         """TODO: ."""
@@ -183,9 +234,10 @@ class Bachelier(ReferenceModel):
         normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
         paths_0 = normal_samples[0] @ chol_0.T
         paths_1 = normal_samples[1] @ chol.T
+        
+        
 
         spots_1 = spots_0 + paths_0
-
         if self.use_antithetic:
             payoff_fn = Bachelier.antithetic_payoff
         else:
