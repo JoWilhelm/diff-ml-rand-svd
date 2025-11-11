@@ -203,8 +203,7 @@ class Heston(ReferenceModel):
         prices = jax.vmap(self.closed_form_price)(basket_S0s, basket_v0s)
         # Introduce interactions
         interaction_term = jnp.sum((basket_S0s - jnp.mean(basket_S0s)) * (basket_v0s - jnp.mean(basket_v0s)))
-        return jnp.dot(self.basket_weights, prices) #+ 0.2 * interaction_term
-    
+        return jnp.dot(self.basket_weights, prices) #+ 0.05 * interaction_term
 
 
 
