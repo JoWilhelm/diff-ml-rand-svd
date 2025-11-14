@@ -190,7 +190,7 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x) -> Scalar:
-        n_paths = 100
+        n_paths = 1000
         
         x = jnp.asarray(x)
         cov = self.cov
@@ -546,10 +546,10 @@ class Bachelier(ReferenceModel):
         baskets = jnp.dot(test_ds.x, self.weights).reshape((-1, 1))
         y_test = test_ds.y
         dydx_test = test_ds.dy
-        gammas = test_ds.ddy                 
+        gammas_test = test_ds.ddy                 
         
 
-        pred_y = pred_y[:, jnp.newaxis]
+        #pred_y = pred_y[:, jnp.newaxis]
 
         # Create a single figure with 3 subplots
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -568,14 +568,17 @@ class Bachelier(ReferenceModel):
         axes[1].set_title(f"Differentials\nrmse: {rmse(pred_dydx, dydx_test)}")
 
         # Calculate and plot gammas in the third subplot
-        pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
-        w = self.weights   
-        gammas = jnp.einsum('bij,i,j->b', gammas, w, w) / ((w @ w) ** 2)  # (b,)
-        
-        axes[2].plot(baskets, pred_gammas, '.', markersize=1, label='Pred')
-        axes[2].plot(baskets, gammas, '.', markersize=1, label='True')
-        axes[2].legend()
-        axes[2].set_title(f"Gammas\nrmse: {rmse(pred_gammas, gammas)}")
+        if gammas_test is not None:
+            gammas_test_plot = jnp.sum(gammas_test, axis=(1, 2))
+            pred_gammas_plot = jnp.sum(pred_ddyddx, axis=(1, 2))
+            #w = self.weights   
+            #gammas_test = jnp.einsum('bij,i,j->b', gammas_test, w, w) / ((w @ w) ** 2)  # (b,)
+            #pred_gammas = jnp.einsum('bij,i,j->b', pred_ddyddx, w, w) / ((w @ w) ** 2)  # (b,)
+
+            axes[2].plot(baskets, pred_gammas_plot, '.', markersize=1, label='Pred')
+            axes[2].plot(baskets, gammas_test_plot, '.', markersize=1, label='True')
+            axes[2].legend()
+            axes[2].set_title(f"Gammas\nrmse: {rmse(pred_ddyddx, gammas_test)}")
 
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
