@@ -242,8 +242,13 @@ def train(
     # initialize test errors
     y_error = dy_error = ddy_error = dddy_error = proj_hvp_rmse = jnp.nan
 
-    # training loop
-    keys = jrandom.split(ref_model.key_train, n_steps)
+    # training
+    duplicate_keys_over_epochs = False
+    if not duplicate_keys_over_epochs:
+        keys = jrandom.split(ref_model.key_train, n_steps)
+    else:
+        batch_keys = jrandom.split(ref_model.key_train, n_batches_per_epoch)
+        keys = jnp.tile(batch_keys, (n_epochs, 1)).reshape(-1, 2)
     iteration_datas = []
     sum_batch_times = 0
     for i, batch_key in enumerate(keys):
