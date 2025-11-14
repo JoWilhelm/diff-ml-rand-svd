@@ -71,7 +71,7 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 
 
 
-def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=1, power_iteration_q=0, kappa=0.95):
+def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
     """
     TODO
     Randomized SVD to get k top singular directions of the Hessian of f averaged over points x.
@@ -129,7 +129,7 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=1, power_ite
 
 
 
-def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, kappa=0.95):
+def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
     """
     TODO
     Randomized SVD to get k top singular directions of the Hessian of f for each point in X.
@@ -137,40 +137,44 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, kappa=0.95):
 
     b = X.shape[0]
     keys = jax.random.split(key, b)
+    s = k + oversampling_p  # total number of sketch directions
 
     def single_sample_rand_svd(x, subkey):
 
-        sketch_directions = generate_random_vectors(shape=(k, ref_model.n_dims), key=subkey, normalize=True)  # (k, d) 
+        sketch_directions = generate_random_vectors(shape=(s, ref_model.n_dims), key=subkey, normalize=True)  # (s, d) 
    
         # build sketch Y = H @ sketch_directions
-        # for a single x hvp_batch returns (1, k, d)
-        Y = hvp_batch(f, x[None, :], sketch_directions)  # (1, k, d)
-        Y = Y[0]  # (k, d)
-        Y = Y.T   # (d, k)
+        # for a single x hvp_batch returns (1, s, d)
+        Y = hvp_batch(f, x[None, :], sketch_directions)  # (1, s, d)
+        Y = Y[0]  # (s, d)
+        Y = Y.T   # (d, s)
 
         # orthonormalize Y
-        Q, _ = jnp.linalg.qr(Y)  # (d, k)
+        Q, _ = jnp.linalg.qr(Y)  # (d, s)
 
         # project
         B_rows = hvp_batch(
             f=f, 
             inputs=x[None, :],
             directions= Q.T
-        )[0]  # (k, d)
-        B = jnp.stack(B_rows, axis=0) # (k, d)
+        )[0]  # (s, d)
+        B = jnp.stack(B_rows, axis=0) # (s, d)
 
         # SVD on B
-        U_tilde, S, _ = jnp.linalg.svd(B, full_matrices=False)  # (k,k)
+        U_tilde, S, _ = jnp.linalg.svd(B, full_matrices=False)  # (s,s)
 
         # lift back
-        U = Q @ U_tilde  # (d, k)
-        U = U.T # (k, d)
+        U = Q @ U_tilde  # (d, s)
+        U = U.T # (s, d)
         
-        S_var = S**2 / jnp.sum(S**2)  # (k,)
-        eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True)  # (k,)
+        S_var = S**2 / jnp.sum(S**2)  # (s,)
+        eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True)  # (s,)
         k_dir = jnp.sum(eval_dir)
 
-        dirs = safe_normalize_vectors(U, axis=-1) # (k, d) take rows as directions
+        dirs = safe_normalize_vectors(U, axis=-1) # (s, d) take rows as directions
+        
+        dirs = dirs[:k, :]  # truncate to top k (k, d)
+
         return dirs, eval_dir, k_dir, S_var
     
 

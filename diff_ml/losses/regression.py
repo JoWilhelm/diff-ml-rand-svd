@@ -40,7 +40,7 @@ def first_order_loss_fn(model, batch: DifferentialData):
 
 
 @eqx.filter_jit
-def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, streaming_dirs: Array | None, streaming_svals: Array | None, variant: str, k: int, p: int, q: int) -> Float:
+def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, streaming_dirs: Array | None, streaming_svals: Array | None, variant: str, k: int, p: int, q: int):
     """
     2nd order loss function with different ways to get directions to compare HVPs into.
     TODO
@@ -101,7 +101,9 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
                                         f=ref_fn,
                                         X=x,
                                         k=k, 
-                                        key=key
+                                        key=key,
+                                        oversampling_p=p,
+                                        power_iteration_q=q
                                         )
         iteration_data["directions"] = dirs_per_x
     
