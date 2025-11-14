@@ -190,7 +190,7 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x) -> Scalar:
-        n_paths = 1000
+        n_paths = 100
         
         x = jnp.asarray(x)
         cov = self.cov
@@ -546,7 +546,8 @@ class Bachelier(ReferenceModel):
         baskets = jnp.dot(test_ds.x, self.weights).reshape((-1, 1))
         y_test = test_ds.y
         dydx_test = test_ds.dy
-        gammas = test_ds.ddy
+        gammas = test_ds.ddy                 
+        
 
         pred_y = pred_y[:, jnp.newaxis]
 
@@ -568,6 +569,9 @@ class Bachelier(ReferenceModel):
 
         # Calculate and plot gammas in the third subplot
         pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
+        w = self.weights   
+        gammas = jnp.einsum('bij,i,j->b', gammas, w, w) / ((w @ w) ** 2)  # (b,)
+        
         axes[2].plot(baskets, pred_gammas, '.', markersize=1, label='Pred')
         axes[2].plot(baskets, gammas, '.', markersize=1, label='True')
         axes[2].legend()

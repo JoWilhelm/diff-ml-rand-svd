@@ -96,13 +96,13 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             # approximation metrics for 2nd order
             if not variant == "fullHessian" and do_approx_metrics:
                 u_H = iter_data["directions"]
-                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady", "streamingOjas", "streamingOjasLite"):
+                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady", "streaming"):
                     iter_data["approximation metrics ref"] = approx_metrics(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
                                                                U_dirs=u_H
                                                                )
-                if variant in ("perXSVD", "streaming"):
+                if variant in ("perXSVD"):
                     iter_data["approximation metrics ref"] = approx_metrics_per_x(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
@@ -134,7 +134,6 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
             c = 1/4
             d = 1/4
             total = a*L0 + b*L1 + c*L2 + d*L3
-            #total = L3
             iter_data["eff_w_norm"] = [a, b, c, d]
             return total, iter_data
         else:
@@ -183,19 +182,18 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
         # get new batch of data from reference model
         batch = ref_model.sample(batch_key, batch_size, order=1)
 
-        dirs_per_x = None
-        Svals = None
+        sketch_dirs = None
+        sketch_svals = None
         # update sketch and pass directions for loss
-        if variant == "streaming" or variant == "streamingOjas" or variant == "streamingOjasLite":
+        if variant == "streaming":
             if sketch is None:
                 raise ValueError("sketch must be provided for \'streaming\' variant")
-            sketch, refinement_directions, Svals = sketch.update_batch(batch.x)
-            dirs_per_x = refinement_directions
-
+            sketch, sketch_dirs, sketch_svals = sketch.update_batch(batch.x)
+            
         # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(
             total_loss_fn, has_aux=True
-        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, learnable_loss_weights, do_approx_metrics)
+        )(weighted_model, batch, batch_key, ref_model, sketch_dirs, sketch_svals, variant, k, learnable_loss_weights, do_approx_metrics)
 
         # optimizer step
         updates, opt_state = optim.update(grads, opt_state, weighted_model)
@@ -252,9 +250,7 @@ def train(
         
         with jax.profiler.StepTraceAnnotation("Train Step", step_num=i):  
 
-            #weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
-
-            # track execution time per batch 
+            # track execution time per batch / train step
             t0 = time.perf_counter()
             weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
             _ = jax.block_until_ready(train_loss)
@@ -295,12 +291,12 @@ def train(
                 H_true = test_data.ddy.reshape(b, d, d)
                 H_pred = test_pred_ddys.reshape(b, d, d)
 
-                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD" or variant == "streamingOjas" or variant == "streamingOjasLite":
+                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD" or variant == "streaming":
                     # batch-shared directions: U_norm  (k, d)
                     HU_true  = jnp.einsum('bij,kj->bki', H_true, U)   # (b, k, d)
                     HU_pred  = jnp.einsum('bij,kj->bki', H_pred, U)   # (b, k, d)
 
-                elif variant == "perXSVD" or variant == "streaming":
+                elif variant == "perXSVD":
                     # per-input directions (b, k, d)
                     # normalize all directions
                     U_stack = U.reshape(-1, H_true.shape[-1])  # (b*k, d)

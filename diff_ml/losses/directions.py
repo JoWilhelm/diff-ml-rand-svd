@@ -183,115 +183,115 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, kappa=0.95):
 
 
 
+#class StreamingHessianSketch(eqx.Module):
+#    """
+#    TODO
+#    """
+#    
+#    key: PRNGKeyArray
+#    Y:  jnp.ndarray
+#    Omega: jnp.ndarray
+#    k: int # number of 'local' directions at each x
+#    r: int # number of 'global' directions r >= k
+#    ref_model: ReferenceModel
+#
+#    # NOTE: Y and Omega need to be acceptes as input to __init__ to make the class work with dataclasses.replace
+#    def __init__(self, ref_model: ReferenceModel, r: int, k: int, key: PRNGKeyArray, Y=None, Omega=None):
+#        self.key = key
+#        self.r = r
+#        self.k = k
+#        #  random map, analogous to sketch directions
+#        if Omega == None:
+#            key, sk = random.split(key)
+#            Omega = random.normal(sk, (ref_model.n_dims, r))    
+#            self.Omega = Omega
+#        else:
+#            # passed on by update step
+#            self.Omega = Omega
+#        
+#        # streaming accumulated sketch
+#        if Y == None:
+#            self.Y = jnp.zeros((ref_model.n_dims, r))
+#        else:
+#            self.Y = Y
+#
+#        self.ref_model = ref_model
+#    
+#    
+#    def update_batch(self, X_batch):
+#        """
+#        Update global sketch with a batch of local samples (b, d)
+#        """
+#        # sketch update: Y_new = Y + mean( H(x_t) @ Omega )
+#        hv = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Omega.T) # (b, r, d)
+#        dY = jnp.mean(hv, axis=0).T # (d, r)
+#        #jax.debug.print("dY: {}", dY)
+#        # update sketch
+#        Y_new = self.Y + dY
+#        sketch_new = replace(self, Y=Y_new)
+#        # small (k) number of local directions per x from updated large (r) global sketch
+#        local_dirs, Svals = sketch_new.local_directions_batch(X_batch) 
+#        return sketch_new, local_dirs, Svals
+#
+#    
+#    def local_directions_batch(self, X_batch):
+#        """
+#        Compute local Hessian singular directions for a batch X_batch (b, d)
+#        """
+#
+#        # orhtonormalize global sketch
+#        Q, _ = jnp.linalg.qr(self.Y)  # (d, r)
+#        #jax.debug.print("U: {}", U)
+#
+#        #b, d = X_batch.shape
+#        Bs = hvp_batch(
+#            f=self.ref_model.reference_fn(), 
+#            inputs=X_batch, 
+#            directions=Q.T
+#            )  # (b, r, d)
+#
+#        # form cores
+#        #Bs = jnp.einsum('di,bjd->bij', Q, Bs)  # (b, r, r)
+#
+#        # small SVD per sample
+#        Ucores, Svals, _ = jax.vmap(lambda B_i: jnp.linalg.svd(B_i, full_matrices=False))(Bs)
+#        
+#        # truncate to top k
+#        Ucores_k = Ucores[:, :, :self.k]  # (b, r, k)
+#        
+#        # lift back
+#        Us = jnp.einsum('dr,brk->bdk', Q, Ucores_k)
+#        Us = Us.transpose(0, 2, 1) # (b, k, d)
+#
+#        # explained variance per dir
+#        Svals = Svals**2
+#        Svals = Svals[:, :self.k]
+#        row_sums = jnp.sum(Svals, axis=1, keepdims=True)  # shape (b, 1)
+#        eps = 1e-12
+#        Svals = Svals / (row_sums + eps)
+#        #jax.debug.print("Svals shape {}", Svals.shape)
+#        #jax.debug.print("Svals entry 0 {}", Svals[0])
+#        
+#        local_dirs = safe_normalize_vectors(Us, axis=-1)
+#        return local_dirs, Svals
+#
+    
+
+
+
+
+
 class StreamingHessianSketch(eqx.Module):
-    """
-    TODO
-    """
-    
-    key: PRNGKeyArray
-    Y:  jnp.ndarray
-    Omega: jnp.ndarray
-    k: int # number of 'local' directions at each x
-    r: int # number of 'global' directions r >= k
-    ref_model: ReferenceModel
-
-    # NOTE: Y and Omega need to be acceptes as input to __init__ to make the class work with dataclasses.replace
-    def __init__(self, ref_model: ReferenceModel, r: int, k: int, key: PRNGKeyArray, Y=None, Omega=None):
-        self.key = key
-        self.r = r
-        self.k = k
-        #  random map, analogous to sketch directions
-        if Omega == None:
-            key, sk = random.split(key)
-            Omega = random.normal(sk, (ref_model.n_dims, r))    
-            self.Omega = Omega
-        else:
-            # passed on by update step
-            self.Omega = Omega
-        
-        # streaming accumulated sketch
-        if Y == None:
-            self.Y = jnp.zeros((ref_model.n_dims, r))
-        else:
-            self.Y = Y
-
-        self.ref_model = ref_model
-    
-    
-    def update_batch(self, X_batch):
-        """
-        Update global sketch with a batch of local samples (b, d)
-        """
-        # sketch update: Y_new = Y + mean( H(x_t) @ Omega )
-        hv = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Omega.T) # (b, r, d)
-        dY = jnp.mean(hv, axis=0).T # (d, r)
-        #jax.debug.print("dY: {}", dY)
-        # update sketch
-        Y_new = self.Y + dY
-        sketch_new = replace(self, Y=Y_new)
-        # small (k) number of local directions per x from updated large (r) global sketch
-        local_dirs, Svals = sketch_new.local_directions_batch(X_batch) 
-        return sketch_new, local_dirs, Svals
-
-    
-    def local_directions_batch(self, X_batch):
-        """
-        Compute local Hessian singular directions for a batch X_batch (b, d)
-        """
-
-        # orhtonormalize global sketch
-        Q, _ = jnp.linalg.qr(self.Y)  # (d, r)
-        #jax.debug.print("U: {}", U)
-
-        #b, d = X_batch.shape
-        Bs = hvp_batch(
-            f=self.ref_model.reference_fn(), 
-            inputs=X_batch, 
-            directions=Q.T
-            )  # (b, r, d)
-
-        # form cores
-        #Bs = jnp.einsum('di,bjd->bij', Q, Bs)  # (b, r, r)
-
-        # small SVD per sample
-        Ucores, Svals, _ = jax.vmap(lambda B_i: jnp.linalg.svd(B_i, full_matrices=False))(Bs)
-        
-        # truncate to top k
-        Ucores_k = Ucores[:, :, :self.k]  # (b, r, k)
-        
-        # lift back
-        Us = jnp.einsum('dr,brk->bdk', Q, Ucores_k)
-        Us = Us.transpose(0, 2, 1) # (b, k, d)
-
-        # explained variance per dir
-        Svals = Svals**2
-        Svals = Svals[:, :self.k]
-        row_sums = jnp.sum(Svals, axis=1, keepdims=True)  # shape (b, 1)
-        eps = 1e-12
-        Svals = Svals / (row_sums + eps)
-        #jax.debug.print("Svals shape {}", Svals.shape)
-        #jax.debug.print("Svals entry 0 {}", Svals[0])
-        
-        local_dirs = safe_normalize_vectors(Us, axis=-1)
-        return local_dirs, Svals
-
-    
-
-
-
-
-
-class StreamingHessianSketchOjasLite(eqx.Module):
     key: PRNGKeyArray
     Q:  jnp.ndarray      # (d, r) orthonormal basis (replace Y)
     Omega: jnp.ndarray   # (d, r) fixed probes if you still want them
     k: int
     r: int
     ref_model: ReferenceModel
-    beta: float          # EMA factor, e.g. 0.1
+    eta: float          # update step size
 
-    def __init__(self, ref_model, r, k, key, Q=None, Omega=None, C=None, beta=0.1):
-        self.key = key; self.r = r; self.k = k; self.beta = beta
+    def __init__(self, ref_model, r, k, key, Q=None, Omega=None, C=None, eta=0.05):
+        self.key = key; self.r = r; self.k = k; self.eta = eta
         d = ref_model.n_dims
         if Q is None:
             key, sk = random.split(key)
@@ -308,55 +308,25 @@ class StreamingHessianSketchOjasLite(eqx.Module):
 
 
 
-    #def update_batch(self, X_batch):
-    #    eta = self.beta
-    #
-    #    # --- Oja residual part (exploit) ---
-    #    B = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
-    #    B = jnp.transpose(B, (0, 2, 1))                                      # (b, d, r)
-    #    QT_B = jnp.einsum('rd,bdj->brj', self.Q.T, B)                          # (b, r, r)
-    #    proj_q = jnp.einsum('dr,brs->bds', self.Q, QT_B)                      # (b, d, r)
-    #    delta_q = jnp.mean(B - proj_q, axis=0)                                # (d, r)
-    #
-    #    # --- small exploration on deflated Omega (explore) ---
-    #    Omega_perp = self.Omega - self.Q @ (self.Q.T @ self.Omega)             # (d, r)
-    #    # optional: orthonormalize probes to improve conditioning
-    #    Omega_perp, _ = jnp.linalg.qr(Omega_perp)                              # (d, r)
-    #    dY = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T)   # (b, r, d)
-    #    delta_o = jnp.mean(jnp.transpose(dY, (0, 2, 1)), axis=0)               # (d, r)
-    #
-    #    # blend (epsilon small, e.g. 0.05)
-    #    eps = 0.05
-    #    delta = delta_q + eps * delta_o
-    #
-    #    # update and re-orth
-    #    Q_new = self.Q + eta * delta
-    #    Q_new, _ = jnp.linalg.qr(Q_new)
-    #
-    #    sketch_new = replace(self, Q=Q_new)
-    #    local_dirs, Svals = sketch_new.local_directions_batch(X_batch)
-    #    return sketch_new, local_dirs, Svals
-    
     def update_batch(self, X_batch):
-        eta = self.beta
-    
-        # --- Oja residual part (exploit) ---
-        B = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
-        B = jnp.mean(B, axis=0).T  # (d, r)
-        B_perp = B - self.Q @ (self.Q.T @ B)  # (d, r)
         
-        ## --- small exploration on deflated Omega (explore) ---
-        dY = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Omega.T)   # (b, r, d)
-        dy = jnp.mean(dY, axis=0).T  # (d, r)
-        dy_perp = dy - self.Q @ (self.Q.T @ dy)  # (d, r)
+        # exploration part
+        Omega_perp = self.Omega - self.Q @ (self.Q.T @ self.Omega)  # (d, r)
+        dQ_exploration = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T)   # (b, r, d)
+        dQ_exploration = jnp.mean(dQ_exploration, axis=0).T  # (d, r)
+        dQ_exploration_perp = dQ_exploration - self.Q @ (self.Q.T @ dQ_exploration)  # (d, r)
+
+        # exploitation part
+        dQ_exploitation = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
+        dQ_exploitation = jnp.mean(dQ_exploitation, axis=0).T  # (d, r)
+        dQ_exploitation_perp = dQ_exploitation - self.Q @ (self.Q.T @ dQ_exploitation)  # (d, r)
         
-        
-        # blend (epsilon small, e.g. 0.05)
+        # blend
         eps = 0.05
-        delta = B_perp + eps * dy_perp
+        dQ = dQ_exploitation_perp + eps * dQ_exploration_perp
     
         # update and re-orth
-        Q_new = self.Q + eta * delta
+        Q_new = self.Q + self.eta * dQ
         Q_new, _ = jnp.linalg.qr(Q_new)
     
         sketch_new = replace(self, Q=Q_new)
@@ -368,7 +338,7 @@ class StreamingHessianSketchOjasLite(eqx.Module):
        
         # project H onto current basis for each sample
         Bs = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)  # (b, r, d)
-        # TODO potentially re-use a cached B from one step before?
+        # TODO potentially re-use a cached B from update_batch() with one step lag instead of recompute?
 
         B = jnp.mean(Bs, axis=0)  # (r, d)
         #jax.debug.print("B.shape {shape}", shape=B.shape)

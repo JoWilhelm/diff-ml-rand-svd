@@ -95,10 +95,9 @@ class Analytic(ReferenceModel):
 
 
 
-    def cubic_rankr(self, x, r: int = 3) -> Scalar:
+    def cubic_rankr(self, x, r: int=3) -> Scalar:
         r = min(r, self.n_dims)
-        # geometrically decaying weights -> strong anisotropy
-        lambdas = 2.0 ** (-jnp.arange(r, dtype=x.dtype))  # 1, 1/2, 1/4, ...
+        lambdas = 2.0 ** (-jnp.arange(r, dtype=x.dtype)) # 1, 1/2, 1/4, ...
         vals = []
         for i in range(r):
             u_i = jnp.zeros((self.n_dims,), dtype=x.dtype).at[i].set(1.0)

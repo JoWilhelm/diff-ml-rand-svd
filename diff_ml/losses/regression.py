@@ -40,13 +40,13 @@ def first_order_loss_fn(model, batch: DifferentialData):
 
 
 @eqx.filter_jit
-def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int) -> Float:
+def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, streaming_dirs: Array | None, streaming_svals: Array | None, variant: str, k: int) -> Float:
     """
     2nd order loss function with different ways to get directions to compare HVPs into.
     TODO
     """
 
-    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "streamingOjas", "streamingOjasLite", "fullHessian"]:
+    if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:
         raise ValueError("variant must be either random, pcady, batchSVD, 3rdBatchSVD, perXSVD, streaming or fullHessian")
 
     iteration_data = {}
@@ -60,6 +60,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
 
     mode = "none" # "none", "batch_averaged", "per_input"
     directions = None 
+    dirs_per_x = None
 
 
     #### ---- get directions to compare HVPs into ---- ####
@@ -103,13 +104,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         iteration_data["directions"] = dirs_per_x
     
     elif variant == "streaming":
-        mode = "per_input"
-        iteration_data["directions"] = dirs_per_x
-        
-    elif variant == "streamingOjas" or variant == "streamingOjasLite":
         mode = "batch_averaged"
-        directions = dirs_per_x
-        iteration_data["directions"] = directions
+        iteration_data["directions"] = streaming_dirs
         
 
 
