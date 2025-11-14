@@ -243,8 +243,8 @@ def train(
     y_error = dy_error = ddy_error = dddy_error = proj_hvp_rmse = jnp.nan
 
     # training
-    duplicate_keys_over_epochs = False
-    if not duplicate_keys_over_epochs:
+    duplicate_batch_keys_over_epochs = True
+    if not duplicate_batch_keys_over_epochs:
         keys = jrandom.split(ref_model.key_train, n_steps)
     else:
         batch_keys = jrandom.split(ref_model.key_train, n_batches_per_epoch)

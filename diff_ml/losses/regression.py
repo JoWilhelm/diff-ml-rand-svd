@@ -105,6 +105,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
     
     elif variant == "streaming":
         mode = "batch_averaged"
+        directions = streaming_dirs
         iteration_data["directions"] = streaming_dirs
         
 

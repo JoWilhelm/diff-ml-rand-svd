@@ -487,11 +487,21 @@ class Heston(ReferenceModel):
 
     def visualize_data(self, dataset: DifferentialData, name: str):
         
-        # TODO multiply with basket weights before as in Bachelier?
+        x1s = None
+        x2s = None
+        
+        ## multiply with basket weights before as in Bachelier?
+        #z = dataset.x.reshape(-1, self.basket_dim, 2)  # (n_samples, basket_dim, 2)
+        #S0s = z[:, :, 0]  # (n_samples, basket_dim)
+        #v0s = z[:, :, 1]  # (n_samples, basket_dim)
+        #x1s = jnp.dot(S0s, self.basket_weights).reshape((-1))
+        #x2s = jnp.dot(v0s, self.basket_weights).reshape((-1))
 
         plot_3d_differential_data(
             dataset=dataset,
             name=name,
+            x1s=x1s,
+            x2s=x2s,
             x1_index=0,
             x2_index=1,
             x1_name="asset0_S0",
