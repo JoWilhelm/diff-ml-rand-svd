@@ -219,8 +219,8 @@ class Bachelier(ReferenceModel):
 
 
     def reference_fn(self):
-        return self.analytic_basket_price_single_x 
-        #return partial(self.simulated_basket_price_single_x)
+        #return self.analytic_basket_price_single_x 
+        return partial(self.simulated_basket_price_single_x)
 
 
 
