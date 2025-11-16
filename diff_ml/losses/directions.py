@@ -15,6 +15,7 @@ from dataclasses import replace
 
 # apply PCA to first-order gradients of reference model
 # credit Neil Kichler
+@eqx.filter_jit
 def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
     
     # dydx: (b, d)
@@ -70,7 +71,7 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 
 
 
-
+@eqx.filter_jit
 def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
     """
     TODO
@@ -129,6 +130,7 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
 
 
 
+@eqx.filter_jit
 def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
     """
     TODO
@@ -316,6 +318,7 @@ class StreamingHessianSketch(eqx.Module):
 
 
 
+    @eqx.filter_jit
     def update_batch(self, X_batch):
         
         # exploration part
@@ -342,6 +345,7 @@ class StreamingHessianSketch(eqx.Module):
         return sketch_new, local_dirs, Svals
     
     
+    @eqx.filter_jit
     def local_directions_batch(self, X_batch):
        
         # project H onto current basis for each sample
@@ -468,6 +472,7 @@ class StreamingHessianSketch(eqx.Module):
 
 
 
+@eqx.filter_jit
 def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
     """
     TODO

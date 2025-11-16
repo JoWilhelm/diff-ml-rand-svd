@@ -228,7 +228,7 @@ def train(
     TODO
     """
 
-    if test_data.dy is None or test_data.ddy is None:
+    if do_test_eval and (test_data.dy is None or test_data.ddy is None):
         raise ValueError("\'test_data\' must contain at least first and second order derivatives for evaluation.")
 
     # wrap model with learnable loss weights    
@@ -267,7 +267,7 @@ def train(
                 
 
         # evaluate on test data at end of each epoch
-        if do_test_eval and i % n_batches_per_epoch == 0:
+        if do_test_eval and i % n_batches_per_epoch == 0 and test_data.ddy is not None:
             epoch_stats = f"Finished epoch {int(i/n_batches_per_epoch)+1} | Train Loss: {train_loss:.5f}"    
 
                 
