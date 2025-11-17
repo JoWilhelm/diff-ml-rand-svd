@@ -236,9 +236,7 @@ class Bachelier(ReferenceModel):
 
 
     def sample(self, key:PRNGKeyArray, n_samples:int, order=1) -> DifferentialData:
-        if order > 1:
-            raise ValueError("Differential data of order > 1 not supported via sample(). Use analytic() for that, e.g. for test set generation.")
-
+        
         cov = self.cov
         spots_0 = jnp.repeat(1.0, self.n_dims)
         t_delta = self.t_maturity - self.t_exposure
@@ -264,11 +262,12 @@ class Bachelier(ReferenceModel):
 
 
         return DifferentialData(
-            order = 1,
+            order = order,
             x = x,
             y = y,
             dy = dy,
-            #ddy = jax.vmap(jax.jacfwd(jax.grad(self.reference_fn())))(x, keys)
+            ddy = jax.vmap(jax.jacfwd(jax.grad(self.reference_fn())))(x, keys) if order >=2 else None,
+            dddy = jax.vmap(jax.jacfwd(jax.jacfwd(jax.grad(self.reference_fn()))))(x, keys) if order >=3 else None
         )
     
 
@@ -336,14 +335,13 @@ class Bachelier(ReferenceModel):
 
 
 
-    def analytic(self, n_samples, minval=0.5, maxval=1.5, order=2) -> DifferentialData:
+    def analytic(self, n_samples, minval=0.0, maxval=2, order=2) -> DifferentialData:
         """TODO: ."""
 
         # adjust lower and upper for dimension
         adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
         adj_lower = 1.0 - (1.0 - minval) * adj
         adj_upper = 1.0 + (maxval - 1.0) * adj
-
         # draw random spots within range
         self.key_test, subkey = jrandom.split(self.key_test)
         spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
@@ -501,31 +499,41 @@ class Bachelier(ReferenceModel):
         y = dataset.y
         dy = dataset.dy
         ddy = dataset.ddy
-        if dataset.order >= 2:
-            # project back onto basket weights
-            w = self.weights                      
-            ddy = jnp.einsum('bij,i,j->b', ddy, w, w) / ((w @ w) ** 2)  # (b,)
+        dddy = dataset.dddy
+
         baskets = jnp.dot(x, self.weights).reshape((-1, 1))
 
         
-        # Create a single figure with 3 subplots
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        # Create a single figure with 4 subplots
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
         # Plot the first subplot
         axes[0].plot(baskets, y, '.', markersize=1)
-        axes[0].set_title(f"Values {name}")
+        axes[0].set_title(f"Prices {name}")
+        axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1)
-        axes[1].set_title(f"Differentials {name}")
-
+        axes[1].set_title(f"Deltas {name}")
+        axes[1].set_xlim(0, 2)
+    
+        w = self.weights                      
         if dataset.order >= 2 and ddy is not None:
+            ddy = jnp.einsum('bij,i,j->b', ddy, w, w) / ((w @ w) ** 2)  # (b,)
             # Calculate and plot gammas in the third subplot
             #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
             axes[2].plot(baskets, ddy, '.', markersize=1)
             axes[2].set_title(f"Gammas {name}")
+            axes[2].set_xlim(0, 2)
 
+        if dataset.order >= 3 and dddy is not None:
+            # Calculate and plot speeds in the fourth subplot
+            speeds = jnp.einsum('bijk,i,j,k->b', dataset.dddy, w, w, w) / ((w @ w) ** 3)  # (b,)
+            #fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+            axes[3].plot(baskets, speeds, '.', markersize=1)
+            axes[3].set_title(f"Speeds {name}")
+            axes[3].set_xlim(0, 2)
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
         plt.show()
@@ -533,32 +541,35 @@ class Bachelier(ReferenceModel):
 
 
     # visualize model predictions
-    def plot_eval(self, pred_y, pred_dydx, pred_ddyddx, test_ds: DifferentialData):
+    def plot_eval(self, pred_y, pred_dydx, pred_ddyddx, pred_dddydddx, test_ds: DifferentialData):
 
 
         baskets = jnp.dot(test_ds.x, self.weights).reshape((-1, 1))
         y_test = test_ds.y
         dydx_test = test_ds.dy
-        gammas_test = test_ds.ddy                 
+        gammas_test = test_ds.ddy      
+        speeds_test = test_ds.dddy           
         
 
         #pred_y = pred_y[:, jnp.newaxis]
 
-        # Create a single figure with 3 subplots
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        # Create a single figure with 4 subplots
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
         # Plot the first subplot
         axes[0].plot(baskets, pred_y, '.', markersize=1)
         axes[0].plot(baskets, y_test, '.', markersize=1)
         axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
-        axes[0].set_title(f"Values \n rmse: {rmse(pred_y, y_test)}")
+        axes[0].set_title(f"Prices \n rmse: {rmse(pred_y, y_test)}")
+        axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1)
         axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1)
         axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
-        axes[1].set_title(f"Differentials\nrmse: {rmse(pred_dydx, dydx_test)}")
+        axes[1].set_title(f"Deltas\nrmse: {rmse(pred_dydx, dydx_test)}")
+        axes[1].set_xlim(0, 2)
 
         # Calculate and plot gammas in the third subplot
         if gammas_test is not None:
@@ -572,6 +583,21 @@ class Bachelier(ReferenceModel):
             axes[2].plot(baskets, gammas_test_plot, '.', markersize=1, label='True Gamma')
             axes[2].legend()
             axes[2].set_title(f"Gammas\nrmse: {rmse(pred_ddyddx, gammas_test)}")
+            axes[2].set_xlim(0, 2)
+        
+        if speeds_test is not None:
+            speeds_test_plot = jnp.sum(speeds_test, axis=(1, 2, 3))
+            pred_speeds_plot = jnp.sum(pred_dddydddx, axis=(1, 2, 3))
+            # Calculate and plot speeds in the fourth subplot
+            #w = self.weights   
+            #speeds_test = jnp.einsum('bijk,i,j,k->b', speeds_test, w, w, w) / ((w @ w) ** 3)  # (b,)
+            #pred_speeds = jnp.einsum('bijk,i,j,k->b', pred_ddyddx, w, w, w) / ((w @ w) ** 3)  # (b,)
+
+            axes[3].plot(baskets, pred_speeds_plot, '.', markersize=1, label='Pred Speed')
+            axes[3].plot(baskets, speeds_test_plot, '.', markersize=1, label='True Speed')
+            axes[3].legend()
+            axes[3].set_title(f"Speeds\nrmse: {rmse(pred_dddydddx, speeds_test)}")
+            axes[3].set_xlim(0, 2)
 
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
