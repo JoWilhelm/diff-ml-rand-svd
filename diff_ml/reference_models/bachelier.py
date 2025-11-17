@@ -175,7 +175,7 @@ class Bachelier(ReferenceModel):
     
 
 
-    def analytic_basket_price_single_x(self, x) -> Scalar:
+    def analytic_basket_price_single_x(self, x, key) -> Scalar:
         basket = jnp.dot(x, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
         price = Bachelier.Call.price(
@@ -189,17 +189,17 @@ class Bachelier(ReferenceModel):
         
         
 
-    def simulated_basket_price_single_x(self, x) -> Scalar:
-        n_paths = 100
+    def simulated_basket_price_single_x(self, x, key) -> Scalar:
+        n_paths = 10
     
         x = jnp.asarray(x)
         cov = self.cov
     
         t_delta = self.t_maturity - self.t_exposure
     
-        # simulations using fixed cov and seed for paths
+        # simulations using fixed cov
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
-        normal_samples = jrandom.normal(self.key_train, shape=(n_paths, self.n_dims))
+        normal_samples = jrandom.normal(key, shape=(n_paths, self.n_dims))
         paths = normal_samples @ chol.T
         
         
@@ -217,11 +217,21 @@ class Bachelier(ReferenceModel):
 
 
 
+    #def simulated_basket_prices_batched(self, x: Float[Array, "batch_size n_dims"], key: PRNGKeyArray) -> Float[Array, "batch_size"]:
+    #    batch_size = x.shape[0]
+    #    keys = jrandom.split(key, batch_size)
+    #    prices = jax.vmap(self.simulated_basket_price_single_x)(x, keys)
+    #    return prices
+    #
+    #def analytic_basket_prices_batched(self, x: Float[Array, "batch_size n_dims"]) -> Float[Array, "batch_size"]:
+    #    return jax.vmap(self.analytic_basket_price_single_x)(x)
 
 
     def reference_fn(self):
         return self.analytic_basket_price_single_x 
-        #return partial(self.simulated_basket_price_single_x)
+        #return self.simulated_basket_price_single_x
+        
+
 
 
 
@@ -237,13 +247,20 @@ class Bachelier(ReferenceModel):
         # increase vols for simulation of xs so we have more samples in the wings
         chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
         # fresh batch key for S0, fixed key for paths
-        normals_x = jrandom.normal(key, shape=(n_samples, self.n_dims))
+        key, subkey = jrandom.split(key)
+        normals_x = jrandom.normal(subkey, shape=(n_samples, self.n_dims))
         paths_0 = normals_x @ chol_0.T
         x = spots_0 + paths_0
         
 
-        value_and_grad_fn = jax.value_and_grad(self.reference_fn())
-        y, dy = jax.vmap(value_and_grad_fn)(x)
+        keys = jrandom.split(key, n_samples)
+        value_and_grad_fn = jax.vmap(jax.value_and_grad(self.reference_fn()))
+        y, dy = value_and_grad_fn(x, keys)
+        #y = self.reference_fn(key)(x)
+        #dy = jax.jacrev(self.reference_fn(key))(x)
+
+        #value_and_grad_fn = jax.value_and_grad(self.reference_fn())
+        #y, dy = value_and_grad_fn(x)
 
 
         return DifferentialData(
@@ -251,7 +268,7 @@ class Bachelier(ReferenceModel):
             x = x,
             y = y,
             dy = dy,
-            #ddy = jax.vmap(jax.jacfwd(jax.grad(self.reference_fn())))(x)
+            #ddy = jax.vmap(jax.jacfwd(jax.grad(self.reference_fn())))(x, keys)
         )
     
 

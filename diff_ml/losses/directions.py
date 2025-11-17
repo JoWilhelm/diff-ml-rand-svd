@@ -79,13 +79,16 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
     """
 
     s = k + oversampling_p  # total number of sketch directions
-    sketch_directions = generate_random_vectors(shape=(s, ref_model.n_dims), key=key, normalize=True)
+    key, subkey = jax.random.split(key)
+    sketch_directions = generate_random_vectors(shape=(s, ref_model.n_dims), key=subkey, normalize=True)
    
+    key, subkey = jax.random.split(key)
     # build sketch Y = H @ sketch_directions
     Y = hvp_batch(
         f=f,
         inputs=x, 
-        directions=sketch_directions
+        directions=sketch_directions,
+        batch_key=subkey
     ) # (b, s, d)
     Y = jnp.mean(Y, axis=0)  # (s, d)
     Y = Y.T # (d, s)    
@@ -95,10 +98,12 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
 
     # project via HVPs
     # each row of B is H @ q_i
+    key, subkey = jax.random.split(key)
     B_rows = hvp_batch(
         f=f,
         inputs=x, 
-        directions=Q.T
+        directions=Q.T,
+        batch_key=subkey
     ) # (b, s, d)
     #jax.debug.print("B_rows.shape {shape}", shape=B_rows.shape)
     B_rows = jnp.mean(B_rows, axis=0)  # (s, d)
@@ -147,7 +152,8 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, oversampling_p=0, pow
    
         # build sketch Y = H @ sketch_directions
         # for a single x hvp_batch returns (1, s, d)
-        Y = hvp_batch(f, x[None, :], sketch_directions)  # (1, s, d)
+        key, subkey = jax.random.split(subkey)
+        Y = hvp_batch(f, x[None, :], sketch_directions, batch_key=subkey)  # (1, s, d)
         Y = Y[0]  # (s, d)
         Y = Y.T   # (d, s)
 
@@ -155,10 +161,12 @@ def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, oversampling_p=0, pow
         Q, _ = jnp.linalg.qr(Y)  # (d, s)
 
         # project
+        key, subkey = jax.random.split(subkey)
         B_rows = hvp_batch(
             f=f, 
             inputs=x[None, :],
-            directions= Q.T
+            directions= Q.T,
+            batch_key=subkey
         )[0]  # (s, d)
         B = jnp.stack(B_rows, axis=0) # (s, d)
 
@@ -319,16 +327,16 @@ class StreamingHessianSketch(eqx.Module):
 
 
     @eqx.filter_jit
-    def update_batch(self, X_batch):
+    def update_batch(self, X_batch, batch_key):
         
         # exploration part
         Omega_perp = self.Omega - self.Q @ (self.Q.T @ self.Omega)  # (d, r)
-        dQ_exploration = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T)   # (b, r, d)
+        dQ_exploration = hvp_batch(self.ref_model.reference_fn(), X_batch, Omega_perp.T, batch_key=batch_key)   # (b, r, d)
         dQ_exploration = jnp.mean(dQ_exploration, axis=0).T  # (d, r)
         dQ_exploration_perp = dQ_exploration - self.Q @ (self.Q.T @ dQ_exploration)  # (d, r)
 
         # exploitation part
-        dQ_exploitation = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)      # (b, r, d)
+        dQ_exploitation = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T, batch_key=batch_key)      # (b, r, d)
         dQ_exploitation = jnp.mean(dQ_exploitation, axis=0).T  # (d, r)
         dQ_exploitation_perp = dQ_exploitation - self.Q @ (self.Q.T @ dQ_exploitation)  # (d, r)
         
@@ -341,15 +349,15 @@ class StreamingHessianSketch(eqx.Module):
         Q_new, _ = jnp.linalg.qr(Q_new)
     
         sketch_new = replace(self, Q=Q_new)
-        local_dirs, Svals = sketch_new.local_directions_batch(X_batch)
+        local_dirs, Svals = sketch_new.local_directions_batch(X_batch, batch_key)
         return sketch_new, local_dirs, Svals
     
     
     @eqx.filter_jit
-    def local_directions_batch(self, X_batch):
+    def local_directions_batch(self, X_batch, batch_key):
        
         # project H onto current basis for each sample
-        Bs = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T)  # (b, r, d)
+        Bs = hvp_batch(self.ref_model.reference_fn(), X_batch, self.Q.T, batch_key=batch_key)  # (b, r, d)
         # TODO potentially re-use a cached B from update_batch() with one step lag instead of recompute?
 
         B = jnp.mean(Bs, axis=0)  # (r, d)
@@ -479,6 +487,7 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
     """
 
     d = ref_model.n_dims
+    b = x.shape[0]
     
     # use U_H as guided sketch directions
     seed_dirs = U_H[:k, :]  # (k, d)
@@ -500,7 +509,8 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
         f=f,
         inputs=x, 
         v_dirs=sketch_directions_v,
-        w_dirs=sketch_directions_w
+        w_dirs=sketch_directions_w,
+        batch_key=key
     ) # (b, r, r, d)
 
     #average over inputs to get E_x T(., v_i, w_j)
@@ -514,9 +524,10 @@ def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
     s = Q.shape[1]
 
 
+    keys = jax.random.split(key, b)
     # instead of SVD on B = Q.T T3, define energy function to rank directions in Q
     def one_energy(q):
-        tvps = jax.vmap(lambda primal: t3vp(f, primal, q, q))(x)
+        tvps = jax.vmap(lambda primal, key: t3vp(f, primal, q, q, key), in_axes=(0, 0))(x, keys)
         mean = jnp.mean(tvps, axis=0)  # (d,)
         return jnp.sum(mean**2)
     

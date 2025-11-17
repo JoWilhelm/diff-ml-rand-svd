@@ -188,7 +188,7 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
         if variant == "streaming":
             if sketch is None:
                 raise ValueError("sketch must be provided for \'streaming\' variant")
-            sketch, sketch_dirs, sketch_svals = sketch.update_batch(batch.x)
+            sketch, sketch_dirs, sketch_svals = sketch.update_batch(batch.x, batch_key)
             
         # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(

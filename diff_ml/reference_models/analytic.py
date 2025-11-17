@@ -126,7 +126,7 @@ class Analytic(ReferenceModel):
 
 
 
-    def normalized_wrapper(self, x_normalized) -> Scalar:
+    def normalized_wrapper(self, x_normalized, key=None) -> Scalar:
         # un-normalize inputs x
         x_raw = x_normalized * self.x_std + self.x_mean
         # call in raw space
@@ -137,7 +137,7 @@ class Analytic(ReferenceModel):
 
 
 
-    def reference_fn(self) -> Callable[[Float[Array, "d"]], Scalar]:
+    def reference_fn(self) -> Callable[[Float[Array, "d"], PRNGKeyArray], Scalar]:
         return self.normalized_wrapper
 
 

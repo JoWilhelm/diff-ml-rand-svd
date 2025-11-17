@@ -122,7 +122,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         target_hvps = hvp_batch_per_input(
             f=ref_fn,
             inputs=x, 
-            directions=dirs_per_x
+            directions=dirs_per_x,
+            batch_key=key
         )
         #jax.debug.print("targets.shape {shape}", shape=target_hvps.shape)
 
@@ -142,7 +143,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         target_hvps = hvp_batch(
             f=ref_fn,
             inputs=x, 
-            directions=directions
+            directions=directions,
+            batch_key=key
         )
     
         # predictions
@@ -164,7 +166,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         target_hvps = hvp_batch(
             f=ref_fn,
             inputs=x, 
-            directions=directions
+            directions=directions,
+            batch_key=key
         )
         # predictions
         pred_hvps = hvp_batch(
@@ -220,7 +223,8 @@ def third_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mod
         f=ref_fn,
         inputs=x, 
         v_dirs=dirs_v,
-        w_dirs=dirs_w
+        w_dirs=dirs_w,
+        batch_key=key
     )
 
     # T3VPs predictions

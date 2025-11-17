@@ -13,59 +13,6 @@ from functools import partial
 
 
 
-#class EuropeanPayoff:
-#    @staticmethod
-#    def call(maturity_prices: Float[ArrayLike, " n"], strike_prices: Float[ScalarLike, ""]) -> Float[Array, " n"]:
-#        return jnp.maximum(jnp.subtract(maturity_prices, strike_prices), 0.0)
-#    @staticmethod
-#    def put(maturity_prices: Float[ArrayLike, " n"], strike_prices: Float[ScalarLike, ""]) -> Float[Array, " n"]:
-#        return jnp.maximum(jnp.subtract(strike_prices, maturity_prices), 0.0)
-#    @staticmethod
-#    def smoothed_call(
-#        maturity_prices: Float[ArrayLike, " n"],
-#        strike_prices: Float[ScalarLike, ""],
-#        eps = 0.01,
-#    ) -> Float[Array, " n"]:
-#        """
-#        C^2-smoothed call payoff.
-#
-#        - For S <= K - eps:        0
-#        - For S >= K + eps:        S - K
-#        - For |S - K| < eps:       smooth polynomial bridge
-#        """
-#        S = jnp.asarray(maturity_prices)
-#        K = jnp.asarray(strike_prices)
-#        eps = jnp.asarray(eps)
-#
-#        # distance to strike
-#        t = S - K
-#
-#        # polynomial segment on (-eps, eps)
-#        # p(t) = -t^4/(16 eps^3) + 3 t^2/(8 eps) + (1/2) t + 3 eps/16
-#        inner = (
-#            - (t ** 4) / (16.0 * eps ** 3)
-#            + 3.0 * (t ** 2) / (8.0 * eps)
-#            + 0.5 * t
-#            + 3.0 * eps / 16.0
-#        )
-#
-#        zero = jnp.zeros_like(t)
-#        linear = t  # == (S - K)
-#
-#        return jnp.where(
-#            t <= -eps,
-#            zero,
-#            jnp.where(t >= eps, linear, inner),
-#        )
-#
-#
-#
-#sharpness = 1e-3
-#bias = sharpness
-#smooth_max_fn = lambda x: jax.nn.celu(x=x, alpha=sharpness) + bias
-
-
-
 class Heston(ReferenceModel):
 
     key_test: PRNGKeyArray
@@ -369,7 +316,7 @@ class Heston(ReferenceModel):
 
 
     
-    def normalized_wrapper(self, x_flat_normalized) -> Scalar:
+    def normalized_wrapper(self, x_flat_normalized, key=None) -> Scalar:
         # un-normalize inputs x
         x_normalized_unflat = x_flat_normalized.reshape(self.basket_dim, 2)
         x_raw_unflat = x_normalized_unflat * self.x_std + self.x_mean
