@@ -38,17 +38,22 @@ class UncertaintyWeighter(eqx.Module):
         s = jnp.stack([self.s0, self.s1, self.s2, self.s3])  # (4,)
         w = 0.5 * jnp.exp(-s)                                # (4,)
 
+        
+        w_active = w * active_mask
+        
+
         # total loss over active tasks: sum( w*L + 0.5*s )
         # where the second term prevents s -> -inf
-        total = jnp.sum(w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)  
+        total = jnp.sum(w_active * losses) + 0.5 * jnp.sum(s * active_mask)  
 
-        # normalized effective weights for display
-        w_active = w * active_mask
-        denom = jnp.sum(w_active) + 1e-12
-        norm_w = w_active / denom
-        #norm_w = jnp.where(active_mask > 0, w_active / denom, 0.0)       
+        #total = jnp.sum(base_weights * w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)
 
-        return total, norm_w
+
+        ## normalized effective weights for display
+        #denom = jnp.sum(w_active) + 1e-12
+        #norm_w = w_active / denom
+        
+        return total, w_active
     
 
 
@@ -116,34 +121,70 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
     #### ---- combine losses ---- ####
 
+    # kichler weights (default setting, alpha=1, beta=2k/d^2, gamma=6(k^2)/d^3)
+    w_L0 = 1.0
+    w_L1 = ref_model.n_dims
+    w_L2 = 2*k if not variant == "fullHessian" else ref_model.n_dims
+    w_L3 = 6*(k**2)
+    c = w_L0
+    if variant not in ["value"]:
+        c = w_L0 + w_L1
+    if variant not in ["value", "1st"]:
+        c += w_L2
+    if variant == "3rdBatchSVD":
+        c += w_L3
+    w_L0 /= c
+    w_L1 /= c
+    w_L2 /= c
+    w_L3 /= c
+   
+    #if not learnable_loss_weights:
+    #    # weighted equally and constant
+    #    if variant == "value":
+    #        total = L0
+    #        iter_data["eff_w_norm"] = [1, 0, 0, 0]
+    #        return total, iter_data
+    #    elif variant == "1st":
+    #        a = 0.5
+    #        b = 0.5
+    #        total = a*L0 + b*L1
+    #        iter_data["eff_w_norm"] = [a, b, 0, 0]
+    #        return total, iter_data
+    #    elif variant == "3rdBatchSVD":
+    #        a = 1/4
+    #        b = 1/4
+    #        c = 1/4
+    #        d = 1/4
+    #        total = a*L0 + b*L1 + c*L2 + d*L3
+    #        iter_data["eff_w_norm"] = [a, b, c, d]
+    #        return total, iter_data
+    #    else:
+    #        a = 1/3
+    #        b = 1/3
+    #        c = 1/3
+    #        total = a*L0 + b*L1 + c*L2
+    #        iter_data["eff_w_norm"] = [a, b, c, 0]
+    #        return total, iter_data
+
     if not learnable_loss_weights:
-        # weighted equally and constant
         if variant == "value":
             total = L0
             iter_data["eff_w_norm"] = [1, 0, 0, 0]
             return total, iter_data
         elif variant == "1st":
-            a = 0.5
-            b = 0.5
-            total = a*L0 + b*L1
-            iter_data["eff_w_norm"] = [a, b, 0, 0]
+            total = w_L0*L0 + w_L1*L1
+            iter_data["eff_w_norm"] = [w_L0, w_L1, 0, 0]
             return total, iter_data
         elif variant == "3rdBatchSVD":
-            a = 1/4
-            b = 1/4
-            c = 1/4
-            d = 1/4
-            total = a*L0 + b*L1 + c*L2 + d*L3
-            iter_data["eff_w_norm"] = [a, b, c, d]
+            total = w_L0*L0 + w_L1*L1 + w_L2*L2 + w_L3*L3
+            iter_data["eff_w_norm"] = [w_L0, w_L1, w_L2, w_L3]
             return total, iter_data
         else:
-            a = 1/3
-            b = 1/3
-            c = 1/3
-            total = a*L0 + b*L1 + c*L2
-            iter_data["eff_w_norm"] = [a, b, c, 0]
+            total = w_L0*L0 + w_L1*L1 + w_L2*L2
+            iter_data["eff_w_norm"] = [w_L0, w_L1, w_L2, 0]
             return total, iter_data
-        
+
+
     # learnable loss weights
     L1 = L1 if not variant == "value" else 0.0
     L2 = L2 if variant not in ["value", "1st"] else 0.0
@@ -159,9 +200,16 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
     else:
         active_mask = jnp.array([1, 1, 1, 0])
 
-    total, norm_w = weighted_model.uw.combine(loss_vec, active_mask)
+    # use kichler base weights and modulate with learnable uncertainties
+    base_weights = jnp.array([w_L0, w_L1, w_L2, w_L3])
+    loss_vec = loss_vec * base_weights
 
-    iter_data["eff_w_norm"] = norm_w
+    total, learned_weights = weighted_model.uw.combine(loss_vec, active_mask)
+
+    total_weights = learned_weights * base_weights
+    weights_normalized = total_weights / (jnp.sum(total_weights) + 1e-12)
+
+    iter_data["eff_w_norm"] = weights_normalized
 
     return total, iter_data
 
@@ -281,7 +329,7 @@ def train(
             test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_data.x)
             test_pred_ddys = test_pred_ddys.reshape(test_data.ddy.shape)
             ddy_error = jnp.sqrt(mse(test_pred_ddys, test_data.ddy))
-            if variant == "3rdBatchSVD" and test_data.dddy is not None:
+            if test_data.dddy is not None:
                 # 3rd order error comparing full third derivative tensors
                 test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_data.x)
                 test_pred_dddys = test_pred_dddys.reshape(test_data.dddy.shape)
