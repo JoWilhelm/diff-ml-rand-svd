@@ -421,6 +421,8 @@ class Bachelier(ReferenceModel):
 
     def visualize_data(self, dataset: DifferentialData, name: str):
 
+        fig_title_y = -0.12
+
         x = dataset.x
         y = dataset.y
         dy = dataset.dy
@@ -435,13 +437,13 @@ class Bachelier(ReferenceModel):
 
         # Plot the first subplot
         axes[0].plot(baskets, y, '.', markersize=1)
-        axes[0].set_title(f"Prices {name}")
+        axes[0].set_title(f"(a) Prices {name}", y=fig_title_y, fontsize=15)
         axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1)
-        axes[1].set_title(f"Deltas {name}")
+        axes[1].set_title(f"(b) Deltas {name}", y=fig_title_y, fontsize=15)
         axes[1].set_xlim(0, 2)
     
         w = self.weights                      
@@ -450,7 +452,7 @@ class Bachelier(ReferenceModel):
             # Calculate and plot gammas in the third subplot
             #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
             axes[2].plot(baskets, ddy, '.', markersize=1)
-            axes[2].set_title(f"Gammas {name}")
+            axes[2].set_title(f"(c) Gammas {name}", y=fig_title_y, fontsize=15)
             axes[2].set_xlim(0, 2)
 
         if dataset.order >= 3 and dddy is not None:
@@ -458,7 +460,7 @@ class Bachelier(ReferenceModel):
             speeds = jnp.einsum('bijk,i,j,k->b', dataset.dddy, w, w, w) / ((w @ w) ** 3)  # (b,)
             #fig, axes = plt.subplots(1, 4, figsize=(20, 5))
             axes[3].plot(baskets, speeds, '.', markersize=1)
-            axes[3].set_title(f"Speeds {name}")
+            axes[3].set_title(f"(d) Speeds {name}", y=fig_title_y, fontsize=15)
             axes[3].set_xlim(0, 2)
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
