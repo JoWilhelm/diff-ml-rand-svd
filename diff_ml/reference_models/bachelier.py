@@ -189,7 +189,7 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x, key) -> Scalar:
-        n_paths = 1
+        n_paths = 100
     
         x = jnp.asarray(x)
         cov = self.cov
@@ -216,8 +216,8 @@ class Bachelier(ReferenceModel):
 
 
     def reference_fn(self):
-        #return self.analytic_basket_price_single_x 
-        return self.simulated_basket_price_single_x
+        return self.analytic_basket_price_single_x 
+        #return self.simulated_basket_price_single_x
         
 
 
@@ -471,6 +471,7 @@ class Bachelier(ReferenceModel):
     # visualize model predictions
     def plot_eval(self, pred_y, pred_dydx, pred_ddyddx, pred_dddydddx, test_ds: DifferentialData):
 
+        title_y = -0.12
 
         baskets = jnp.dot(test_ds.x, self.weights).reshape((-1, 1))
         y_test = test_ds.y
@@ -487,16 +488,18 @@ class Bachelier(ReferenceModel):
         # Plot the first subplot
         axes[0].plot(baskets, pred_y, '.', markersize=1)
         axes[0].plot(baskets, y_test, '.', markersize=1)
-        axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
-        axes[0].set_title(f"Prices \n rmse: {rmse(pred_y, y_test)}")
+        #axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
+        #axes[0].set_title(f"Prices \n rmse: {rmse(pred_y, y_test)}")
+        axes[0].set_title(f"(a) Prices", y=title_y, fontsize=15)
         axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1)
         axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1)
-        axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
-        axes[1].set_title(f"Deltas\nrmse: {rmse(pred_dydx, dydx_test)}")
+        #axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
+        #axes[1].set_title(f"Deltas\nrmse: {rmse(pred_dydx, dydx_test)}")
+        axes[1].set_title(f"(b) Deltas", y=title_y, fontsize=15)
         axes[1].set_xlim(0, 2)
 
         # Calculate and plot gammas in the third subplot
@@ -509,8 +512,9 @@ class Bachelier(ReferenceModel):
 
             axes[2].plot(baskets, pred_gammas_plot, '.', markersize=1, label='Pred Gamma')
             axes[2].plot(baskets, gammas_test_plot, '.', markersize=1, label='True Gamma')
-            axes[2].legend()
-            axes[2].set_title(f"Gammas\nrmse: {rmse(pred_ddyddx, gammas_test)}")
+            #axes[2].legend()
+            #axes[2].set_title(f"Gammas\nrmse: {rmse(pred_ddyddx, gammas_test)}")
+            axes[2].set_title(f"(c) Gammas", y=title_y, fontsize=15)
             axes[2].set_xlim(0, 2)
         
         if speeds_test is not None:
@@ -523,13 +527,16 @@ class Bachelier(ReferenceModel):
 
             axes[3].plot(baskets, pred_speeds_plot, '.', markersize=1, label='Pred Speed')
             axes[3].plot(baskets, speeds_test_plot, '.', markersize=1, label='True Speed')
-            axes[3].legend()
-            axes[3].set_title(f"Speeds\nrmse: {rmse(pred_dddydddx, speeds_test)}")
+            #axes[3].legend()
+            #axes[3].set_title(f"Speeds\nrmse: {rmse(pred_dddydddx, speeds_test)}")
+            axes[3].set_title(f"(d) Speeds", y=title_y, fontsize=15)
             axes[3].set_xlim(0, 2)
 
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
+        # no legend
         plt.show()
         #now = datetime.datetime.now()
         #fig.savefig(f'result/eval_ml_{now}.pdf', bbox_inches='tight')
+        return fig
 

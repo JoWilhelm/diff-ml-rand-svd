@@ -225,7 +225,7 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
     """
 
     @eqx.filter_jit
-    def train_step(weighted_model: WeightedSurrogate, sketch: StreamingHessianSketch | None, opt_state: PyTree, batch_key: PRNGKeyArray):
+    def train_step(weighted_model: WeightedSurrogate, sketch: StreamingHessianSketch | None, opt_state: PyTree, batch_key: PRNGKeyArray) -> Tuple[WeightedSurrogate, PyTree, jnp.ndarray, dict, StreamingHessianSketch | None]:
         
         # get new batch of data from reference model
         batch = ref_model.sample(batch_key, batch_size, order=1)
@@ -236,8 +236,8 @@ def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: 
         if variant == "streaming":
             if sketch is None:
                 raise ValueError("sketch must be provided for \'streaming\' variant")
-            sketch, sketch_dirs, sketch_svals = sketch.update_batch(batch.x, batch_key)
             
+            sketch, sketch_dirs, sketch_svals = sketch.update_batch(batch.x, batch_key)
         # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(
             total_loss_fn, has_aux=True
@@ -302,7 +302,7 @@ def train(
     iteration_datas = []
     sum_batch_times = 0
     for i, batch_key in enumerate(keys):
-        
+
         with jax.profiler.StepTraceAnnotation("Train Step", step_num=i):  
 
             # track execution time per batch / train step
@@ -310,7 +310,7 @@ def train(
             weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
             _ = jax.block_until_ready(train_loss)
             t1 = time.perf_counter()
-            if i >= 3:
+            if i >= n_batches_per_epoch: # skip first two epochs for timing
                 sum_batch_times += (t1 - t0)
                 
 
@@ -384,7 +384,7 @@ def train(
         # end batch
 
     # end training loop
-    avg_time_per_batch = sum_batch_times / (n_steps - 3)
-    print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
+    avg_time_per_batch = sum_batch_times / (n_steps - n_batches_per_epoch)
+    #print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
 
     return weighted_model, iteration_datas, sketch, avg_time_per_batch
