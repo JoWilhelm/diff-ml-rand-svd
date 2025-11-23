@@ -73,7 +73,8 @@ class Analytic(ReferenceModel):
     
     # Rosenbrock function
     # strong decay, dependece on x
-    #https://en.wikipedia.org/wiki/Rosenbrock_function
+    # https://en.wikipedia.org/wiki/Rosenbrock_function
+    # https://www.sfu.ca/~ssurjano/rosen.html
     def rosenbrock(self, x) -> Scalar:
         x_i   = x[..., :-1]
         x_ip1 = x[..., 1:]
