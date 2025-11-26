@@ -1,8 +1,7 @@
 from jaxtyping import Array, Float, PRNGKeyArray
-from typing import Callable
+from typing import Callable, Any
 from diff_ml.typing import DifferentialData, Scalar
 from abc import ABC, abstractmethod
-
 
 
 class ReferenceModel(ABC):
@@ -43,7 +42,7 @@ class ReferenceModel(ABC):
     
     
     @abstractmethod
-    def visualize_data(self, dataset: DifferentialData, name: str):
+    def visualize_data(self, dataset: DifferentialData, name: str) -> Any:
         """
         TODO
         """

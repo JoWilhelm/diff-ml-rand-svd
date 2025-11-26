@@ -189,7 +189,7 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x, key) -> Scalar:
-        n_paths = 100
+        n_paths = 1000
     
         x = jnp.asarray(x)
         cov = self.cov
@@ -216,8 +216,8 @@ class Bachelier(ReferenceModel):
 
 
     def reference_fn(self):
-        return self.analytic_basket_price_single_x 
-        #return self.simulated_basket_price_single_x
+        #return self.analytic_basket_price_single_x 
+        return self.simulated_basket_price_single_x
         
 
 
@@ -437,13 +437,13 @@ class Bachelier(ReferenceModel):
 
         # Plot the first subplot
         axes[0].plot(baskets, y, '.', markersize=1)
-        axes[0].set_title(f"(a) Prices {name}", y=fig_title_y, fontsize=15)
+        axes[0].set_title(f"(a) Prices", y=fig_title_y, fontsize=15)
         axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1)
-        axes[1].set_title(f"(b) Deltas {name}", y=fig_title_y, fontsize=15)
+        axes[1].set_title(f"(b) Deltas", y=fig_title_y, fontsize=15)
         axes[1].set_xlim(0, 2)
     
         w = self.weights                      
@@ -452,7 +452,7 @@ class Bachelier(ReferenceModel):
             # Calculate and plot gammas in the third subplot
             #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
             axes[2].plot(baskets, ddy, '.', markersize=1)
-            axes[2].set_title(f"(c) Gammas {name}", y=fig_title_y, fontsize=15)
+            axes[2].set_title(f"(c) Gammas", y=fig_title_y, fontsize=15)
             axes[2].set_xlim(0, 2)
 
         if dataset.order >= 3 and dddy is not None:
@@ -460,11 +460,12 @@ class Bachelier(ReferenceModel):
             speeds = jnp.einsum('bijk,i,j,k->b', dataset.dddy, w, w, w) / ((w @ w) ** 3)  # (b,)
             #fig, axes = plt.subplots(1, 4, figsize=(20, 5))
             axes[3].plot(baskets, speeds, '.', markersize=1)
-            axes[3].set_title(f"(d) Speeds {name}", y=fig_title_y, fontsize=15)
+            axes[3].set_title(f"(d) Speeds", y=fig_title_y, fontsize=15)
             axes[3].set_xlim(0, 2)
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
         plt.show()
+        return fig
         
 
 
