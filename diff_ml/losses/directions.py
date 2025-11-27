@@ -70,6 +70,24 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 
 
 
+def hvp_power_iterated_sketch(f, x, sketch_directions, q):
+    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
+    Y = jnp.mean(Y, axis=0)  # (k, dim)
+
+    for _ in range(q):    
+        # --- Re-orthogonalize directions ---
+        Y, _ = jnp.linalg.qr(Y.T)  # Y.T: (dim, k)
+        Y = Y.T  # shape back to (k, dim)
+
+        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+        Y = jnp.mean(Y, axis=0)  # (k, dim)
+        
+        # in the non-symmetric case the atrixis appliec twice per step A^T A
+        #Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+        #Y = jnp.mean(Y, axis=0)  # (k, dim)
+    return Y
+
+
 
 @eqx.filter_jit
 def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
@@ -83,14 +101,23 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
     sketch_directions = generate_random_vectors(shape=(s, ref_model.n_dims), key=subkey, normalize=True)
    
     key, subkey = jax.random.split(key)
-    # build sketch Y = H @ sketch_directions
-    Y = hvp_batch(
+    
+    ## build sketch Y = H @ sketch_directions
+    #Y = hvp_batch(
+    #    f=f,
+    #    inputs=x, 
+    #    directions=sketch_directions,
+    #    batch_key=subkey
+    #) # (b, s, d)
+    #Y = jnp.mean(Y, axis=0)  # (s, d)
+    
+    Y = hvp_power_iterated_sketch(
         f=f,
-        inputs=x, 
-        directions=sketch_directions,
-        batch_key=subkey
-    ) # (b, s, d)
-    Y = jnp.mean(Y, axis=0)  # (s, d)
+        x=x,
+        sketch_directions=sketch_directions,
+        q=power_iteration_q
+    )  # (s, d)
+
     Y = Y.T # (d, s)    
     
     # orthonormalize Y

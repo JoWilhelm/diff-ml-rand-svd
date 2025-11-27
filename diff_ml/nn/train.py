@@ -138,34 +138,6 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
     w_L2 /= c
     w_L3 /= c
    
-    #if not learnable_loss_weights:
-    #    # weighted equally and constant
-    #    if variant == "value":
-    #        total = L0
-    #        iter_data["eff_w_norm"] = [1, 0, 0, 0]
-    #        return total, iter_data
-    #    elif variant == "1st":
-    #        a = 0.5
-    #        b = 0.5
-    #        total = a*L0 + b*L1
-    #        iter_data["eff_w_norm"] = [a, b, 0, 0]
-    #        return total, iter_data
-    #    elif variant == "3rdBatchSVD":
-    #        a = 1/4
-    #        b = 1/4
-    #        c = 1/4
-    #        d = 1/4
-    #        total = a*L0 + b*L1 + c*L2 + d*L3
-    #        iter_data["eff_w_norm"] = [a, b, c, d]
-    #        return total, iter_data
-    #    else:
-    #        a = 1/3
-    #        b = 1/3
-    #        c = 1/3
-    #        total = a*L0 + b*L1 + c*L2
-    #        iter_data["eff_w_norm"] = [a, b, c, 0]
-    #        return total, iter_data
-
     if not learnable_loss_weights:
         if variant == "value":
             total = L0
