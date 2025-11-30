@@ -70,8 +70,12 @@ def PCA_of_dydx_directions(dydx, kappa=0.95, normalize=True):
 
 
 
-def hvp_power_iterated_sketch(f, x, sketch_directions, q):
-    Y = hvp_batch(f=f, inputs=x, directions=sketch_directions) # (batch_size, k, dim)
+def hvp_power_iterated_sketch(f, x, sketch_directions, q, key):
+    Y = hvp_batch(f=f, 
+                  inputs=x, 
+                  directions=sketch_directions, 
+                  batch_key=key
+        )# (batch_size, k, dim)
     Y = jnp.mean(Y, axis=0)  # (k, dim)
 
     for _ in range(q):    
@@ -79,13 +83,15 @@ def hvp_power_iterated_sketch(f, x, sketch_directions, q):
         Y, _ = jnp.linalg.qr(Y.T)  # Y.T: (dim, k)
         Y = Y.T  # shape back to (k, dim)
 
-        Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
+        key, subkey = jax.random.split(key)
+
+        Y = hvp_batch(f=f, inputs=x, directions=Y, batch_key=subkey) # (batch_size, k, dim)
         Y = jnp.mean(Y, axis=0)  # (k, dim)
         
         # in the non-symmetric case the atrixis appliec twice per step A^T A
         #Y = hvp_batch(f=f, inputs=x, directions=Y) # (batch_size, k, dim)
         #Y = jnp.mean(Y, axis=0)  # (k, dim)
-    return Y
+    return Y, key
 
 
 
@@ -111,11 +117,12 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
     #) # (b, s, d)
     #Y = jnp.mean(Y, axis=0)  # (s, d)
     
-    Y = hvp_power_iterated_sketch(
+    Y, key = hvp_power_iterated_sketch(
         f=f,
         x=x,
         sketch_directions=sketch_directions,
-        q=power_iteration_q
+        q=power_iteration_q,
+        key=subkey
     )  # (s, d)
 
     Y = Y.T # (d, s)    
