@@ -1,0 +1,56 @@
+Variant: value
+  avg time per batch: 2.19 ms
+  final value loss: 0.019083 ± 0.002307
+  final 1st-order loss: 0.015184 ± 0.001614
+  final 2nd-order loss: 0.011719 ± 0.001129
+  final 3rd-order loss: 0.007678 ± 0.000475
+
+Variant: 1st
+  avg time per batch: 2.49 ms
+  final value loss: 0.010501 ± 0.001597
+  final 1st-order loss: 0.007141 ± 0.000668
+  final 2nd-order loss: 0.005719 ± 0.000459
+  final 3rd-order loss: 0.004902 ± 0.000357
+
+Variant: random
+  avg time per batch: 2.60 ms
+  final value loss: 0.010683 ± 0.001289
+  final 1st-order loss: 0.006606 ± 0.000763
+  final 2nd-order loss: 0.005144 ± 0.000424
+  final 3rd-order loss: 0.004498 ± 0.000329
+
+Variant: pcady
+  avg time per batch: 3.66 ms
+  final value loss: 0.010457 ± 0.001227
+  final 1st-order loss: 0.006612 ± 0.000512
+  final 2nd-order loss: 0.005157 ± 0.000368
+  final 3rd-order loss: 0.004362 ± 0.000351
+
+Variant: batchSVD
+  avg time per batch: 3.85 ms
+  final value loss: 0.010508 ± 0.001285
+  final 1st-order loss: 0.006577 ± 0.000694
+  final 2nd-order loss: 0.005060 ± 0.000420
+  final 3rd-order loss: 0.004325 ± 0.000371
+
+Variant: streaming
+  avg time per batch: 4.12 ms
+  final value loss: 0.010739 ± 0.001659
+  final 1st-order loss: 0.006655 ± 0.000770
+  final 2nd-order loss: 0.005113 ± 0.000452
+  final 3rd-order loss: 0.004318 ± 0.000367
+
+Variant: fullHessian
+  avg time per batch: 3.08 ms
+  final value loss: 0.010074 ± 0.001579
+  final 1st-order loss: 0.006119 ± 0.000765
+  final 2nd-order loss: 0.004667 ± 0.000478
+  final 3rd-order loss: 0.004142 ± 0.000383
+
+Variant: 3rdBatchSVD
+  avg time per batch: 5.06 ms
+  final value loss: 0.011076 ± 0.001385
+  final 1st-order loss: 0.006503 ± 0.000575
+  final 2nd-order loss: 0.004345 ± 0.000262
+  final 3rd-order loss: 0.003257 ± 0.000265
+  

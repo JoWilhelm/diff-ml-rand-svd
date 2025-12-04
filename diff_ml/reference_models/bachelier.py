@@ -28,7 +28,42 @@ class EuropeanPayoff:
     @staticmethod
     def put(maturity_prices: Float[ArrayLike, " n"], strike_prices: Float[ScalarLike, ""]) -> Float[Array, " n"]:
         return jnp.maximum(jnp.subtract(strike_prices, maturity_prices), 0.0)
+    @staticmethod
+    def smoothed_call(
+        maturity_prices: Float[ArrayLike, " n"],
+        strike_prices: Float[ScalarLike, ""],
+        eps = 0.1,
+    ) -> Float[Array, " n"]:
+        """
+        C^3 smoothed payoff.
+        - For S <= K - eps:          0
+        - For S >= K + eps:          S - K
+        - For |S - K| < eps:         polynomial bridge
+        """
+        S = jnp.asarray(maturity_prices)
+        K = jnp.asarray(strike_prices)
+        eps = jnp.asarray(eps)
 
+        t = S - K  # distance to strike
+        u = t / eps  # normalized in [-1, 1] inside the bridge
+
+        # polynomial r(u) on (-1, 1):
+        # r(u) = u^6/32 - 5 u^4/32 + 15 u^2/32 + u/2 + 5/32
+        r = (
+            (u**6 - 5.0 * u**4 + 15.0 * u**2) / 32.0
+            + 0.5 * u
+            + 5.0 / 32.0
+        )
+
+        inner = eps * r
+        zero = jnp.zeros_like(t)
+        linear = t  # == (S - K)
+
+        return jnp.where(
+            t <= -eps,
+            zero,
+            jnp.where(t >= eps, linear, inner),
+        )
 
 def generate_correlation_matrix(key: PRNGKeyArray, n_samples: int) -> Array:
     """TODO: ."""
@@ -87,6 +122,21 @@ class Bachelier(ReferenceModel):
         self.weights = weights / jnp.sum(weights)
         self.n_dims = basket_dim
 
+
+        # fix cov once
+        key, subkey = jrandom.split(self.key_train)
+        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
+        # generate random volatilities
+        key, subkey = jrandom.split(key)
+        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
+        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
+        # It makes plotting the data more convenient.
+        normalized_vols = (self.weights * vols).reshape((-1, 1))
+        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
+        vols = vols * self.vol_basket / v
+        diag_v = jnp.diag(vols)
+        self.cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
+        
    
    
    
@@ -100,11 +150,8 @@ class Bachelier(ReferenceModel):
         """TODO: ."""
         spots_end = xs + paths
         baskets_end = jnp.dot(spots_end, weights)
-        pay = EuropeanPayoff.call(baskets_end, strike_price)
+        pay = EuropeanPayoff.smoothed_call(baskets_end, strike_price)
         return pay
-
-
-
 
     @staticmethod
     def antithetic_payoff(
@@ -116,18 +163,18 @@ class Bachelier(ReferenceModel):
         """TODO: ."""
         spots_end_a = xs + paths
         baskets_end_a = jnp.dot(spots_end_a, weights)
-        pay_a = EuropeanPayoff.call(baskets_end_a, strike_price)
+        pay_a = EuropeanPayoff.smoothed_call(baskets_end_a, strike_price)
 
         spots_end_b = xs - paths
         baskets_end_b = jnp.dot(spots_end_b, weights)
-        pay_b = EuropeanPayoff.call(baskets_end_b, strike_price)
+        pay_b = EuropeanPayoff.smoothed_call(baskets_end_b, strike_price)
 
         pay = 0.5 * (pay_a + pay_b)
         return pay
     
 
 
-    def analytic_basket_price_single_x(self, x) -> Scalar:
+    def analytic_basket_price_single_x(self, x, key) -> Scalar:
         basket = jnp.dot(x, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
         price = Bachelier.Call.price(
@@ -139,71 +186,73 @@ class Bachelier(ReferenceModel):
         price = price.reshape((-1,))
         return price[0]
         
-    def reference_fn(self):
-        return self.analytic_basket_price_single_x 
-
-
-    
-    
-
-    def sample(self, key: PRNGKeyArray, n_samples: int, order=1) -> DifferentialData:
-        """TODO: ."""
-
-        if order > 1:
-            raise ValueError("Differential data of order > 1 not supported via sample(). Use analytic() for that, e.g. for test set generation.")
-
-        #  w.l.o.g., initialize spots, i.e. S_0, as all ones
-        spots_0 = jnp.repeat(1.0, self.n_dims)
-
-        # generate random correlation matrix
-        key, subkey = jrandom.split(key)
-        correlated_samples = generate_correlation_matrix(subkey, self.n_dims)
-
-        # generate random volatilities
-        key, subkey = jrandom.split(key)
-        vols = jrandom.uniform(subkey, shape=(self.n_dims,), minval=5.0, maxval=50.0)
-
-        # W.l.o.g., normalize the volatilities for a given volatility of the basket.
-        # It makes plotting the data more convenient.
-        normalized_vols = (self.weights * vols).reshape((-1, 1))
-        v = jnp.sqrt(jnp.linalg.multi_dot([normalized_vols.T, correlated_samples, normalized_vols]).reshape(1))
-        vols = vols * self.vol_basket / v
-
-        t_delta = self.t_maturity - self.t_exposure
-
-        diag_v = jnp.diag(vols)
-        cov = jnp.linalg.multi_dot([diag_v, correlated_samples, diag_v])
-        key, subkey = jrandom.split(key)
         
-        # Cholesky
+
+    def simulated_basket_price_single_x(self, x, key) -> Scalar:
+        n_paths = 1000
+    
+        x = jnp.asarray(x)
+        cov = self.cov
+    
+        t_delta = self.t_maturity - self.t_exposure
+    
+        # simulations using fixed cov
         chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
-        # increase vols for simulation of xs so we have more samples in the wings
-        chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
-        # simulations
-        normal_samples = jrandom.normal(subkey, shape=(2, n_samples, self.n_dims))
-        paths_0 = normal_samples[0] @ chol_0.T
-        paths_1 = normal_samples[1] @ chol.T
-
-        spots_1 = spots_0 + paths_0
-
+        normal_samples = jrandom.normal(key, shape=(n_paths, self.n_dims))
+        paths = normal_samples @ chol.T
+        
+        
         if self.use_antithetic:
             payoff_fn = Bachelier.antithetic_payoff
         else:
             payoff_fn = Bachelier.payoff
-
+       
         payoff_fn = partial(payoff_fn, weights=self.weights, strike_price=self.strike_price)
+        
+        payoffs = payoff_fn(x[jnp.newaxis, :], paths)
+    
+        return jnp.mean(payoffs, axis=0)
+    
 
-        payoffs_vjp, vjp_fn = jax.vjp(payoff_fn, spots_1, paths_1)
-        differentials_vjp = vjp_fn(jnp.ones(payoffs_vjp.shape))[0]
+
+    def reference_fn(self):
+        #return self.analytic_basket_price_single_x 
+        return self.simulated_basket_price_single_x
+        
+
+
+
+
+    def sample(self, key:PRNGKeyArray, n_samples:int, order=1) -> DifferentialData:
+        
+        cov = self.cov
+        spots_0 = jnp.repeat(1.0, self.n_dims)
+        t_delta = self.t_maturity - self.t_exposure
+        # simulations using fixed cov and seed for paths
+        chol = jnp.linalg.cholesky(cov) * jnp.sqrt(t_delta)
+        # increase vols for simulation of xs so we have more samples in the wings
+        chol_0 = chol * self.vol_mult * jnp.sqrt(self.t_exposure / t_delta)
+        # fresh batch key for S0, fixed key for paths
+        key, subkey = jrandom.split(key)
+        normals_x = jrandom.normal(subkey, shape=(n_samples, self.n_dims))
+        paths_0 = normals_x @ chol_0.T
+        x = spots_0 + paths_0
+        
+
+        keys = jrandom.split(key, n_samples)
+        value_and_grad_fn = jax.vmap(jax.value_and_grad(self.reference_fn()))
+        y, dy = value_and_grad_fn(x, keys)
+        
 
         return DifferentialData(
-            order = 1,
-            x = spots_1,
-            y = payoffs_vjp,
-            dy = differentials_vjp
+            order = order,
+            x = x,
+            y = y,
+            dy = dy,
+            ddy = jax.vmap(jax.jacfwd(jax.grad(self.reference_fn())))(x, keys) if order >=2 else None,
+            dddy = jax.vmap(jax.jacfwd(jax.jacfwd(jax.grad(self.reference_fn()))))(x, keys) if order >=3 else None
         )
-
-
+    
 
 
 
@@ -212,14 +261,13 @@ class Bachelier(ReferenceModel):
 
 
 
-    def analytic(self, n_samples, minval=0.5, maxval=1.5, order=2) -> DifferentialData:
+    def analytic(self, n_samples, minval=0.0, maxval=2, order=2) -> DifferentialData:
         """TODO: ."""
 
         # adjust lower and upper for dimension
         adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
         adj_lower = 1.0 - (1.0 - minval) * adj
         adj_upper = 1.0 + (maxval - 1.0) * adj
-
         # draw random spots within range
         self.key_test, subkey = jrandom.split(self.key_test)
         spots = jrandom.uniform(subkey, shape=(n_samples, self.n_dims), minval=adj_lower, maxval=adj_upper)
@@ -373,78 +421,123 @@ class Bachelier(ReferenceModel):
 
     def visualize_data(self, dataset: DifferentialData, name: str):
 
+        fig_title_y = -0.12
+
         x = dataset.x
         y = dataset.y
         dy = dataset.dy
         ddy = dataset.ddy
-        if dataset.order >= 2:
-            # project back onto basket weights
-            w = self.weights                      
-            ddy = jnp.einsum('bij,i,j->b', ddy, w, w) / ((w @ w) ** 2)  # (b,)
+        dddy = dataset.dddy
+
         baskets = jnp.dot(x, self.weights).reshape((-1, 1))
 
         
-        # Create a single figure with 3 subplots
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        # Create a single figure with 4 subplots
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
         # Plot the first subplot
         axes[0].plot(baskets, y, '.', markersize=1)
-        axes[0].set_title(f"Values {name}")
+        axes[0].set_title(f"(a) Prices", y=fig_title_y, fontsize=15)
+        axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1)
-        axes[1].set_title(f"Differentials {name}")
-
+        axes[1].set_title(f"(b) Deltas", y=fig_title_y, fontsize=15)
+        axes[1].set_xlim(0, 2)
+    
+        w = self.weights                      
         if dataset.order >= 2 and ddy is not None:
+            ddy = jnp.einsum('bij,i,j->b', ddy, w, w) / ((w @ w) ** 2)  # (b,)
             # Calculate and plot gammas in the third subplot
             #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
             axes[2].plot(baskets, ddy, '.', markersize=1)
-            axes[2].set_title(f"Gammas {name}")
+            axes[2].set_title(f"(c) Gammas", y=fig_title_y, fontsize=15)
+            axes[2].set_xlim(0, 2)
 
+        if dataset.order >= 3 and dddy is not None:
+            # Calculate and plot speeds in the fourth subplot
+            speeds = jnp.einsum('bijk,i,j,k->b', dataset.dddy, w, w, w) / ((w @ w) ** 3)  # (b,)
+            #fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+            axes[3].plot(baskets, speeds, '.', markersize=1)
+            axes[3].set_title(f"(d) Speeds", y=fig_title_y, fontsize=15)
+            axes[3].set_xlim(0, 2)
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
         plt.show()
+        return fig
         
 
 
     # visualize model predictions
-    def plot_eval(self, pred_y, pred_dydx, pred_ddyddx, test_ds: DifferentialData):
+    def plot_eval(self, pred_y, pred_dydx, pred_ddyddx, pred_dddydddx, test_ds: DifferentialData):
 
+        title_y = -0.12
 
         baskets = jnp.dot(test_ds.x, self.weights).reshape((-1, 1))
         y_test = test_ds.y
         dydx_test = test_ds.dy
-        gammas = test_ds.ddy
+        gammas_test = test_ds.ddy      
+        speeds_test = test_ds.dddy           
+        
 
-        pred_y = pred_y[:, jnp.newaxis]
+        #pred_y = pred_y[:, jnp.newaxis]
 
-        # Create a single figure with 3 subplots
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        # Create a single figure with 4 subplots
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
         # Plot the first subplot
         axes[0].plot(baskets, pred_y, '.', markersize=1)
         axes[0].plot(baskets, y_test, '.', markersize=1)
-        axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
-        axes[0].set_title(f"Values \n rmse: {rmse(pred_y, y_test)}")
+        #axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
+        #axes[0].set_title(f"Prices \n rmse: {rmse(pred_y, y_test)}")
+        axes[0].set_title(f"(a) Prices", y=title_y, fontsize=15)
+        axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
         axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1)
         axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1)
-        axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
-        axes[1].set_title(f"Differentials\nrmse: {rmse(pred_dydx, dydx_test)}")
+        #axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
+        #axes[1].set_title(f"Deltas\nrmse: {rmse(pred_dydx, dydx_test)}")
+        axes[1].set_title(f"(b) Deltas", y=title_y, fontsize=15)
+        axes[1].set_xlim(0, 2)
 
         # Calculate and plot gammas in the third subplot
-        pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
-        axes[2].plot(baskets, pred_gammas, '.', markersize=1, label='Pred')
-        axes[2].plot(baskets, gammas, '.', markersize=1, label='True')
-        axes[2].legend()
-        axes[2].set_title(f"Gammas\nrmse: {rmse(pred_gammas, gammas)}")
+        if gammas_test is not None:
+            gammas_test_plot = jnp.sum(gammas_test, axis=(1, 2))
+            pred_gammas_plot = jnp.sum(pred_ddyddx, axis=(1, 2))
+            #w = self.weights   
+            #gammas_test = jnp.einsum('bij,i,j->b', gammas_test, w, w) / ((w @ w) ** 2)  # (b,)
+            #pred_gammas = jnp.einsum('bij,i,j->b', pred_ddyddx, w, w) / ((w @ w) ** 2)  # (b,)
+
+            axes[2].plot(baskets, pred_gammas_plot, '.', markersize=1, label='Pred Gamma')
+            axes[2].plot(baskets, gammas_test_plot, '.', markersize=1, label='True Gamma')
+            #axes[2].legend()
+            #axes[2].set_title(f"Gammas\nrmse: {rmse(pred_ddyddx, gammas_test)}")
+            axes[2].set_title(f"(c) Gammas", y=title_y, fontsize=15)
+            axes[2].set_xlim(0, 2)
+        
+        if speeds_test is not None:
+            speeds_test_plot = jnp.sum(speeds_test, axis=(1, 2, 3))
+            pred_speeds_plot = jnp.sum(pred_dddydddx, axis=(1, 2, 3))
+            # Calculate and plot speeds in the fourth subplot
+            #w = self.weights   
+            #speeds_test = jnp.einsum('bijk,i,j,k->b', speeds_test, w, w, w) / ((w @ w) ** 3)  # (b,)
+            #pred_speeds = jnp.einsum('bijk,i,j,k->b', pred_ddyddx, w, w, w) / ((w @ w) ** 3)  # (b,)
+
+            axes[3].plot(baskets, pred_speeds_plot, '.', markersize=1, label='Pred Speed')
+            axes[3].plot(baskets, speeds_test_plot, '.', markersize=1, label='True Speed')
+            #axes[3].legend()
+            #axes[3].set_title(f"Speeds\nrmse: {rmse(pred_dddydddx, speeds_test)}")
+            axes[3].set_title(f"(d) Speeds", y=title_y, fontsize=15)
+            axes[3].set_xlim(0, 2)
 
         # Adjust the layout and save the figure to a PDF file
         plt.tight_layout()
+        # no legend
         plt.show()
         #now = datetime.datetime.now()
         #fig.savefig(f'result/eval_ml_{now}.pdf', bbox_inches='tight')
+        return fig
 

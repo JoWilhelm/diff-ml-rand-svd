@@ -38,17 +38,22 @@ class UncertaintyWeighter(eqx.Module):
         s = jnp.stack([self.s0, self.s1, self.s2, self.s3])  # (4,)
         w = 0.5 * jnp.exp(-s)                                # (4,)
 
+        
+        w_active = w * active_mask
+        
+
         # total loss over active tasks: sum( w*L + 0.5*s )
         # where the second term prevents s -> -inf
-        total = jnp.sum(w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)  
+        total = jnp.sum(w_active * losses) + 0.5 * jnp.sum(s * active_mask)  
 
-        # normalized effective weights for display
-        w_active = w * active_mask
-        denom = jnp.sum(w_active) + 1e-12
-        norm_w = w_active / denom
-        #norm_w = jnp.where(active_mask > 0, w_active / denom, 0.0)       
+        #total = jnp.sum(base_weights * w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)
 
-        return total, norm_w
+
+        ## normalized effective weights for display
+        #denom = jnp.sum(w_active) + 1e-12
+        #norm_w = w_active / denom
+        
+        return total, w_active
     
 
 
@@ -73,7 +78,7 @@ class WeightedSurrogate(eqx.Module):
 
 
 
-def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
+def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, batch_key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int, p: int, q: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
     combining 0th, 1st, 2nd and 3rd order losses with either equal weights or learnable weights
     """
@@ -91,18 +96,18 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
         L1 = first_order_loss_fn(model, batch)
         
         if variant not in ["value", "1st"]:
-            (L2, iter_data) = second_order_loss_fn(model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k)
+            (L2, iter_data) = second_order_loss_fn(model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, p, q)
             
             # approximation metrics for 2nd order
             if not variant == "fullHessian" and do_approx_metrics:
                 u_H = iter_data["directions"]
-                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady"):
+                if variant in ("batchSVD", "random", "3rdBatchSVD", "pcady", "streaming"):
                     iter_data["approximation metrics ref"] = approx_metrics(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
                                                                U_dirs=u_H
                                                                )
-                if variant in ("perXSVD", "streaming"):
+                if variant in ("perXSVD"):
                     iter_data["approximation metrics ref"] = approx_metrics_per_x(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
@@ -116,34 +121,42 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
     #### ---- combine losses ---- ####
 
+    # kichler weights (default setting, alpha=1, beta=2k/d^2, gamma=6(k^2)/d^3)
+    w_L0 = 1.0
+    w_L1 = ref_model.n_dims
+    w_L2 = 2*k if not variant == "fullHessian" else ref_model.n_dims
+    w_L3 = 6*(k**2)
+    c = w_L0
+    if variant not in ["value"]:
+        c = w_L0 + w_L1
+    if variant not in ["value", "1st"]:
+        c += w_L2
+    if variant == "3rdBatchSVD":
+        c += w_L3
+    w_L0 /= c
+    w_L1 /= c
+    w_L2 /= c
+    w_L3 /= c
+   
     if not learnable_loss_weights:
-        # weighted equally and constant
         if variant == "value":
             total = L0
             iter_data["eff_w_norm"] = [1, 0, 0, 0]
             return total, iter_data
         elif variant == "1st":
-            a = 0.5
-            b = 0.5
-            total = a*L0 + b*L1
-            iter_data["eff_w_norm"] = [a, b, 0, 0]
+            total = w_L0*L0 + w_L1*L1
+            iter_data["eff_w_norm"] = [w_L0, w_L1, 0, 0]
             return total, iter_data
         elif variant == "3rdBatchSVD":
-            a = 1/4
-            b = 1/4
-            c = 1/4
-            d = 1/4
-            total = a*L0 + b*L1 + c*L2 + d*L3
-            iter_data["eff_w_norm"] = [a, b, c, d]
+            total = w_L0*L0 + w_L1*L1 + w_L2*L2 + w_L3*L3
+            iter_data["eff_w_norm"] = [w_L0, w_L1, w_L2, w_L3]
             return total, iter_data
         else:
-            a = 1/3
-            b = 1/3
-            c = 1/3
-            total = a*L0 + b*L1 + c*L2
-            iter_data["eff_w_norm"] = [a, b, c, 0]
+            total = w_L0*L0 + w_L1*L1 + w_L2*L2
+            iter_data["eff_w_norm"] = [w_L0, w_L1, w_L2, 0]
             return total, iter_data
-        
+
+
     # learnable loss weights
     L1 = L1 if not variant == "value" else 0.0
     L2 = L2 if variant not in ["value", "1st"] else 0.0
@@ -159,9 +172,16 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
     else:
         active_mask = jnp.array([1, 1, 1, 0])
 
-    total, norm_w = weighted_model.uw.combine(loss_vec, active_mask)
+    # use kichler base weights and modulate with learnable uncertainties
+    base_weights = jnp.array([w_L0, w_L1, w_L2, w_L3])
+    loss_vec = loss_vec * base_weights
 
-    iter_data["eff_w_norm"] = norm_w
+    total, learned_weights = weighted_model.uw.combine(loss_vec, active_mask)
+
+    total_weights = learned_weights * base_weights
+    weights_normalized = total_weights / (jnp.sum(total_weights) + 1e-12)
+
+    iter_data["eff_w_norm"] = weights_normalized
 
     return total, iter_data
 
@@ -171,30 +191,29 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
 
 
-def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
+def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, p: int, q: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
     TODO
     """
 
     @eqx.filter_jit
-    def train_step(weighted_model: WeightedSurrogate, sketch: StreamingHessianSketch | None, opt_state: PyTree, batch_key: PRNGKeyArray):
+    def train_step(weighted_model: WeightedSurrogate, sketch: StreamingHessianSketch | None, opt_state: PyTree, batch_key: PRNGKeyArray) -> Tuple[WeightedSurrogate, PyTree, jnp.ndarray, dict, StreamingHessianSketch | None]:
         
         # get new batch of data from reference model
         batch = ref_model.sample(batch_key, batch_size, order=1)
 
-        dirs_per_x = None
-        Svals = None
+        sketch_dirs = None
+        sketch_svals = None
         # update sketch and pass directions for loss
         if variant == "streaming":
             if sketch is None:
                 raise ValueError("sketch must be provided for \'streaming\' variant")
-            sketch, refinement_directions, Svals = sketch.update_batch(batch.x)
-            dirs_per_x = refinement_directions
-
+            
+            sketch, sketch_dirs, sketch_svals = sketch.update_batch(batch.x, batch_key)
         # total loss and gradients
         (loss_value, iteration_data), grads = eqx.filter_value_and_grad(
             total_loss_fn, has_aux=True
-        )(weighted_model, batch, batch_key, ref_model, dirs_per_x, Svals, variant, k, learnable_loss_weights, do_approx_metrics)
+        )(weighted_model, batch, batch_key, ref_model, sketch_dirs, sketch_svals, variant, k, p, q, learnable_loss_weights, do_approx_metrics)
 
         # optimizer step
         updates, opt_state = optim.update(grads, opt_state, weighted_model)
@@ -219,6 +238,8 @@ def train(
     sketch: StreamingHessianSketch | None,
     variant: str,
     k: int,
+    p: int,
+    q: int,
     learnable_loss_weights: bool = True,
     do_approx_metrics: bool = False,
     do_test_eval: bool = True
@@ -227,14 +248,14 @@ def train(
     TODO
     """
 
-    if test_data.dy is None or test_data.ddy is None:
+    if do_test_eval and (test_data.dy is None or test_data.ddy is None):
         raise ValueError("\'test_data\' must contain at least first and second order derivatives for evaluation.")
 
     # wrap model with learnable loss weights    
     weighted_model = WeightedSurrogate(base=model)
     
     # setup training
-    train_step = make_train_step(ref_model, optim, batch_size, variant, k, learnable_loss_weights, do_approx_metrics)
+    train_step = make_train_step(ref_model, optim, batch_size, variant, k, p, q, learnable_loss_weights, do_approx_metrics)
     opt_state = optim.init(eqx.filter(weighted_model, eqx.is_array))
     train_loss = jnp.zeros(1)
     n_steps = n_epochs * n_batches_per_epoch
@@ -243,27 +264,30 @@ def train(
     # initialize test errors
     y_error = dy_error = ddy_error = dddy_error = proj_hvp_rmse = jnp.nan
 
-    # training loop
-    keys = jrandom.split(ref_model.key_train, n_steps)
+    # training
+    duplicate_batch_keys_over_epochs = True
+    if not duplicate_batch_keys_over_epochs:
+        keys = jrandom.split(ref_model.key_train, n_steps)
+    else:
+        batch_keys = jrandom.split(ref_model.key_train, n_batches_per_epoch)
+        keys = jnp.tile(batch_keys, (n_epochs, 1)).reshape(-1, 2)
     iteration_datas = []
     sum_batch_times = 0
     for i, batch_key in enumerate(keys):
-        
+
         with jax.profiler.StepTraceAnnotation("Train Step", step_num=i):  
 
-            #weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
-
-            # track execution time per batch 
+            # track execution time per batch / train step
             t0 = time.perf_counter()
             weighted_model, opt_state, train_loss, iteration_data, sketch = train_step(weighted_model, sketch, opt_state, batch_key)
             _ = jax.block_until_ready(train_loss)
             t1 = time.perf_counter()
-            if i >= 3:
+            if i >= n_batches_per_epoch: # skip first two epochs for timing
                 sum_batch_times += (t1 - t0)
                 
 
         # evaluate on test data at end of each epoch
-        if do_test_eval and i % n_batches_per_epoch == 0:
+        if do_test_eval and i % n_batches_per_epoch == 0 and test_data.ddy is not None:
             epoch_stats = f"Finished epoch {int(i/n_batches_per_epoch)+1} | Train Loss: {train_loss:.5f}"    
 
                 
@@ -277,7 +301,7 @@ def train(
             test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_data.x)
             test_pred_ddys = test_pred_ddys.reshape(test_data.ddy.shape)
             ddy_error = jnp.sqrt(mse(test_pred_ddys, test_data.ddy))
-            if variant == "3rdBatchSVD" and test_data.dddy is not None:
+            if test_data.dddy is not None:
                 # 3rd order error comparing full third derivative tensors
                 test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_data.x)
                 test_pred_dddys = test_pred_dddys.reshape(test_data.dddy.shape)
@@ -294,12 +318,12 @@ def train(
                 H_true = test_data.ddy.reshape(b, d, d)
                 H_pred = test_pred_ddys.reshape(b, d, d)
 
-                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD":
+                if variant == "batchSVD" or variant == "random" or variant == "3rdbatchSVD" or variant == "streaming":
                     # batch-shared directions: U_norm  (k, d)
                     HU_true  = jnp.einsum('bij,kj->bki', H_true, U)   # (b, k, d)
                     HU_pred  = jnp.einsum('bij,kj->bki', H_pred, U)   # (b, k, d)
 
-                elif variant == "perXSVD" or variant == "streaming":
+                elif variant == "perXSVD":
                     # per-input directions (b, k, d)
                     # normalize all directions
                     U_stack = U.reshape(-1, H_true.shape[-1])  # (b*k, d)
@@ -332,7 +356,7 @@ def train(
         # end batch
 
     # end training loop
-    avg_time_per_batch = sum_batch_times / (n_steps - 3)
-    print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
+    avg_time_per_batch = sum_batch_times / (n_steps - n_batches_per_epoch)
+    #print(f"Average execution time per batch: {avg_time_per_batch:.5f}s")
 
     return weighted_model, iteration_datas, sketch, avg_time_per_batch

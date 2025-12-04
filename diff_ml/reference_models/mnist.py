@@ -186,7 +186,7 @@ class MNIST_ref(ReferenceModel):
 
     
 
-    def get_logit_for_target_digit(self, x_flat):
+    def get_logit_for_target_digit(self, x_flat, key=None):
         x = x_flat.reshape(self.un_flattened_shape)  # (H, W, 1)
         logits = self.cnn(x)
         top_class = jnp.argmax(logits)

@@ -1,8 +1,7 @@
 from jaxtyping import Array, Float, PRNGKeyArray
-from typing import Callable
+from typing import Callable, Any
 from diff_ml.typing import DifferentialData, Scalar
 from abc import ABC, abstractmethod
-
 
 
 class ReferenceModel(ABC):
@@ -33,16 +32,17 @@ class ReferenceModel(ABC):
     
     
     @abstractmethod
-    def reference_fn(self) -> Callable[[Float[Array, "d"]], Scalar]:
+    # returns a function form n_dims to scalar
+    def reference_fn(self) -> Callable[[Float[Array, "n_dims"], PRNGKeyArray], Scalar]:
         """
-        TODO
-        Must accept x in the same space as returned by sample(). I.e. if sample() returns normalized data, reference_fn must accept normalized data. 
+        Must accept xs in the same space as returned by sample(). I.e. if sample() returns normalized data, reference_fn must accept normalized data. 
+        They key argument is optional, depending on whether the reference model is stochastic or not.
         """
         pass
     
     
     @abstractmethod
-    def visualize_data(self, dataset: DifferentialData, name: str):
+    def visualize_data(self, dataset: DifferentialData, name: str) -> Any:
         """
         TODO
         """

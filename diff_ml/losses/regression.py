@@ -13,8 +13,6 @@ from diff_ml.losses.directions import get_rand_SVD_directions, get_rand_SVD_dire
 from diff_ml.ad import hvp_batch, t3vp_batch, hvp_batch_per_input
 
 
-
-
 def standard_loss_fn(model, batch: DifferentialData):
     """
     0th order loss function
@@ -42,7 +40,7 @@ def first_order_loss_fn(model, batch: DifferentialData):
 
 
 @eqx.filter_jit
-def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, dirs_per_x: Array | None, Svals: Array | None, variant: str, k: int) -> Float:
+def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, streaming_dirs: Array | None, streaming_svals: Array | None, variant: str, k: int, p: int, q: int):
     """
     2nd order loss function with different ways to get directions to compare HVPs into.
     TODO
@@ -53,8 +51,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
 
     iteration_data = {}
 
-    x = batch.x
-
+    x = batch.x # (b, d)
     
     k = min(k, ref_model.n_dims)  # ensure k does not exceed the number of dimensions
 
@@ -63,6 +60,7 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
 
     mode = "none" # "none", "batch_averaged", "per_input"
     directions = None 
+    dirs_per_x = None
 
 
     #### ---- get directions to compare HVPs into ---- ####
@@ -90,7 +88,9 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
                                         f=ref_fn,
                                         x=x,
                                         k=k,
-                                        key=key
+                                        key=key,
+                                        oversampling_p=p,
+                                        power_iteration_q=q
                                         )
         iteration_data["directions"] = directions
         
@@ -101,15 +101,17 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
                                         f=ref_fn,
                                         X=x,
                                         k=k, 
-                                        key=key
+                                        key=key,
+                                        oversampling_p=p,
+                                        power_iteration_q=q
                                         )
         iteration_data["directions"] = dirs_per_x
     
-    else: # streaming
-        mode = "per_input"
-        iteration_data["directions"] = dirs_per_x
+    elif variant == "streaming":
+        mode = "batch_averaged"
+        directions = streaming_dirs
+        iteration_data["directions"] = streaming_dirs
         
-
 
 
     #### ---- get 2nd order targets and predictions via HVPs ---- ####
@@ -120,7 +122,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         target_hvps = hvp_batch_per_input(
             f=ref_fn,
             inputs=x, 
-            directions=dirs_per_x
+            directions=dirs_per_x,
+            batch_key=key
         )
         #jax.debug.print("targets.shape {shape}", shape=target_hvps.shape)
 
@@ -140,7 +143,8 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
         target_hvps = hvp_batch(
             f=ref_fn,
             inputs=x, 
-            directions=directions
+            directions=directions,
+            batch_key=key
         )
     
         # predictions
@@ -152,9 +156,25 @@ def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKe
 
 
     else: # none (full Hessian)
-        # true Hessians via jax.hessian for comparison
-        target_hvps = vmap(jax.hessian(ref_fn))(x)
-        pred_hvps = vmap(jax.hessian(MakeScalar(model)))(x)
+        ## true Hessians via jax.hessian for comparison
+        #target_hvps = vmap(jax.hessian(ref_fn))(x)
+        #pred_hvps = vmap(jax.hessian(MakeScalar(model)))(x)
+
+        import jax.numpy as jnp
+        directions = jnp.eye(ref_model.n_dims)  # identity directions for full Hessian
+        # targets
+        target_hvps = hvp_batch(
+            f=ref_fn,
+            inputs=x, 
+            directions=directions,
+            batch_key=key
+        )
+        # predictions
+        pred_hvps = hvp_batch(
+            f=MakeScalar(model),
+            inputs=x, 
+            directions=directions
+        )
         
 
     #### ---- compute 2nd order loss ---- ####
@@ -191,15 +211,20 @@ def third_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key, ref_mod
                                     f=ref_fn,
                                     x=x,
                                     U_H=U_H,
-                                    k=k
+                                    k=k,
+                                    key=key
                                     )
+    #rand_dirs = generate_random_vectors((k, ref_model.n_dims), key=key, normalize=True)
+    #dirs_v = rand_dirs
+    #dirs_w = rand_dirs
 
     # T3VPs targets
     target_t3vps = t3vp_batch(
         f=ref_fn,
         inputs=x, 
         v_dirs=dirs_v,
-        w_dirs=dirs_w
+        w_dirs=dirs_w,
+        batch_key=key
     )
 
     # T3VPs predictions

@@ -73,7 +73,8 @@ class Analytic(ReferenceModel):
     
     # Rosenbrock function
     # strong decay, dependece on x
-    #https://en.wikipedia.org/wiki/Rosenbrock_function
+    # https://en.wikipedia.org/wiki/Rosenbrock_function
+    # https://www.sfu.ca/~ssurjano/rosen.html
     def rosenbrock(self, x) -> Scalar:
         x_i   = x[..., :-1]
         x_ip1 = x[..., 1:]
@@ -91,6 +92,20 @@ class Analytic(ReferenceModel):
         mcos = jnp.mean(jnp.cos(c * x), axis=-1)
         term2 = -jnp.exp(mcos)
         return term1 + term2 + a + jnp.e
+    
+
+
+
+    def cubic_rankr(self, x, r: int=3) -> Scalar:
+        r = min(r, self.n_dims)
+        lambdas = 2.0 ** (-jnp.arange(r, dtype=x.dtype)) # 1, 1/2, 1/4, ...
+        vals = []
+        for i in range(r):
+            u_i = jnp.zeros((self.n_dims,), dtype=x.dtype).at[i].set(1.0)
+            proj = jnp.einsum("...d,d->...", x, u_i)
+            vals.append(lambdas[i] * proj**3)
+        return jnp.sum(jnp.stack(vals, axis=-1), axis=-1)
+
 
 
 
@@ -105,12 +120,14 @@ class Analytic(ReferenceModel):
             return self.rosenbrock
         elif self.type == "Ackley":
             return self.ackley
+        elif self.type == "CubicRankR":
+            return self.cubic_rankr
         else:
             raise ValueError(f"Unknown function type: {self.type}")
 
 
 
-    def normalized_wrapper(self, x_normalized) -> Scalar:
+    def normalized_wrapper(self, x_normalized, key=None) -> Scalar:
         # un-normalize inputs x
         x_raw = x_normalized * self.x_std + self.x_mean
         # call in raw space
@@ -121,7 +138,7 @@ class Analytic(ReferenceModel):
 
 
 
-    def reference_fn(self) -> Callable[[Float[Array, "d"]], Scalar]:
+    def reference_fn(self) -> Callable[[Float[Array, "d"], PRNGKeyArray], Scalar]:
         return self.normalized_wrapper
 
 
