@@ -126,8 +126,8 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
     #jax.debug.print("U.shape {shape}", shape=U.shape)
 
     S_var = S**2 / jnp.sum(S**2)
-    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) # make sure that at least the first principal component is always actively used
-    k_dir = jnp.sum(eval_dir) # number of principal components used to explain kappa% of variance
+    eval_dir = (~(jnp.cumsum(S_var) > kappa)).at[0].set(True) 
+    k_dir = jnp.sum(eval_dir) 
     
     dirs = safe_normalize_vectors(U, axis=-1) # (s, d) take rows as directions
     
