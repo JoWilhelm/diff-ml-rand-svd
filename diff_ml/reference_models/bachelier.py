@@ -189,7 +189,7 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x, key) -> Scalar:
-        n_paths = 1000
+        n_paths = 1
     
         x = jnp.asarray(x)
         cov = self.cov
@@ -216,8 +216,8 @@ class Bachelier(ReferenceModel):
 
 
     def reference_fn(self):
-        #return self.analytic_basket_price_single_x 
-        return self.simulated_basket_price_single_x
+        return self.analytic_basket_price_single_x 
+        #return self.simulated_basket_price_single_x
         
 
 

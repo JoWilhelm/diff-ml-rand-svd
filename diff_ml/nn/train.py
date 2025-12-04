@@ -105,13 +105,15 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
                     iter_data["approximation metrics ref"] = approx_metrics(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
-                                                               U_dirs=u_H
+                                                               U_dirs=u_H,
+                                                               batch_key=batch_key
                                                                )
                 if variant in ("perXSVD"):
                     iter_data["approximation metrics ref"] = approx_metrics_per_x(
                                                                fn=ref_model.reference_fn(),
                                                                x=batch.x, 
-                                                               dirs_per_x=u_H
+                                                               dirs_per_x=u_H,
+                                                               batch_key=batch_key
                                                                )
             
             if variant == "3rdBatchSVD":

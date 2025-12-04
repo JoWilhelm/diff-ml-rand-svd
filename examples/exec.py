@@ -21,71 +21,54 @@ import optax
 print(jax.devices())
 
 
-key = jrandom.PRNGKey(1)
+key = jrandom.PRNGKey(42)
 key, subkey = jrandom.split(key)
 
 
+#min_x, max_x, type = -5.0, 5.0, "RHE"
+##min_x, max_x, type = -1.0, 1.0, "CubicRankR"
+##min_x, max_x, type = -1.5, 2.5, "Rosenbrock"
+##min_x, max_x, type = -5.0, 5.0, "Ackley"
+##min_x, max_x, type = -5.12, 5.12, "Rastrigin"
+#ref_model = Analytic(
+#    key=key,
+#    type=type,
+#    d=7,
+#    min_x=min_x,
+#    max_x=max_x
+#)
 
-ref_model_analytic = Analytic(
-    key=key,
-    type="RHE",
-    #type="Rastrigin",
-    #type="Rosenbrock",
-    #type="Ackley", 
-    d=5,
-    min_x=-5.0,
-    max_x=5.0
-)
-#RHE: min_x = -5.0, max_x = 5.0
-#Rastrigin: min_x = -5.12, max_x = 5.12
-#Rosenbrock: min_x = -1.5, max_x = 2.5
-#Ackley: min_x = -5.0, max_x = 5.0
-
-
-
-#ref_model_mnist = MNIST_ref(
+#ref_model = MNIST_ref(
 #    key=key, 
 #    scale=0.5,
 #    target_class=9
 #)
 
-
-#basket_dim = 2
-#ref_model_heston = Heston(
+#basket_dim = 7
+#ref_model = Heston(
 #    key = key,
 #    basket_dim=basket_dim,
 #    basket_weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0),
 #)
 
-#basket_dim = 7
-#ref_model_bachelier = Bachelier(
-#    key,
-#    basket_dim=basket_dim, 
-#    weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0)
-#)
-
-
-#ref_model = ref_model_bachelier
-#ref_model = ref_model_heston
-ref_model = ref_model_analytic
-#ref_model = ref_model_mnist
+basket_dim = 7
+ref_model = Bachelier(
+    subkey,
+    basket_dim=basket_dim, 
+    weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0)
+)
 
 
 
-
-
-#test_set = ref_model.get_test_set(n_samples=128)
 test_set = ref_model.get_test_set(n_samples=1*1024, order=3)
-
-print("shapes:")
+print("")
+print("test set shapes:")
 print("x:", test_set.x.shape)
 print("y:", test_set.y.shape)
 print("dydx:", test_set.dy.shape)
 print("ddyddx:", "-" if test_set.ddy is None else test_set.ddy.shape)
 print("dddydddx:", "-" if test_set.dddy is None else test_set.dddy.shape)
-
-
-
+print("")
 
 
 
@@ -100,23 +83,30 @@ variant = "batchSVD"
 #variant = "fullHessian"
 
 
+k = 1
+streaming_r = 2
+oversamppling_p = streaming_r - k
+power_iteration_q = 0
+
 learnable_loss_weights = True
-k = 2
-streaming_r = 3
-
-n_epochs = 100  # 200 for Heston single asset convergence
-n_batches_per_epoch = 32#8#32#32 # 32
-BATCH_SIZE = 256#16#256#256 # 256
-key = jrandom.PRNGKey(42)
+do_approx_metrics = False
 
 
+n_epochs = 10
+n_batches_per_epoch = 64
+batch_size = 128
+lr = 1e-3
 
-# nn model
+
+
+# NN surrogate model and optimizer
 input_dims = ref_model.n_dims
 key, subkey = jax.random.split(key)
 mlp = eqx.nn.MLP(key=subkey, in_size=input_dims, out_size="scalar", width_size=20, depth=3, activation=jax.nn.silu)
+key, subkey = jax.random.split(key)
 mlp = init_linear_weight(mlp, trunc_init, subkey)
 surrogate_model = mlp
+optim = optax.adam(learning_rate=lr)
 
 
 
@@ -133,31 +123,31 @@ else:
 
 
 
-optim = optax.adam(learning_rate=1e-3)
-
-
 weighted_model, iteration_datas, sketch, avg_time_per_batch = train(
                         model = surrogate_model, 
                         test_data=test_set,
                         optim=optim, 
                         n_epochs=n_epochs,
                         n_batches_per_epoch=n_batches_per_epoch,
-                        batch_size=BATCH_SIZE,
+                        batch_size=batch_size,
                         ref_model=ref_model,
                         sketch=sketch,
                         variant=variant,
                         k=k,
-                        learnable_loss_weights=learnable_loss_weights
+                        p=oversamppling_p,
+                        q=power_iteration_q,
+                        learnable_loss_weights=learnable_loss_weights,
+                        do_approx_metrics=do_approx_metrics
                         )
 
 
 
-# eval price predictions
+# final test set evaluations
 test_pred_ys, test_pred_dys = vmap(jax.value_and_grad(weighted_model))(test_set.x)
 test_pred_ddys = vmap(jax.hessian(MakeScalar(weighted_model)))(test_set.x)
 test_pred_dddys = vmap(jax.jacfwd(jax.hessian(MakeScalar(weighted_model))))(test_set.x)
-
-print("Test predictions shapes:")
+print("")
+print("test set predictions shapes:")
 print("test_pred_ys shape: ", test_pred_ys.shape)
 print("test_pred_dys shape: ", test_pred_dys.shape)
 print("test_pred_ddys shape: ", test_pred_ddys.shape)
@@ -178,3 +168,16 @@ print(f"test ddy error: {ddy_error:.5f}")
 if test_set.dddy is not None:
     print(f"test dddy error: {dddy_error:.5f}")
 
+
+
+if do_approx_metrics:
+    eF_mean  = jnp.array([iteration_datas[t]["approximation metrics ref"]["eF mean"]  for t in range(n_epochs)]).mean()
+    e2_mean  = jnp.array([iteration_datas[t]["approximation metrics ref"]["e2 mean"]  for t in range(n_epochs)]).mean()
+    evr_mean = jnp.array([iteration_datas[t]["approximation metrics ref"]["evr mean"] for t in range(n_epochs)]).mean()
+    eng_mean = jnp.array([iteration_datas[t]["approximation metrics ref"]["eng mean"] for t in range(n_epochs)]).mean()
+    print("")
+    print("Hessian approximation metrics for the second-order supervision directions:")
+    print(f"mean error Frobenius norm: {eF_mean:.3f}")
+    print(f"mean error spectral norm: {e2_mean:.3f}")
+    print(f"mean explained variance ratio: {evr_mean:.3f}")
+    print(f"mean energy captured: {eng_mean:.3f}")

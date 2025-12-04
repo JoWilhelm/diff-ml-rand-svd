@@ -2,17 +2,21 @@ import jax
 import jax.numpy as jnp
 
 
-def approx_metrics(fn, x, U_dirs):
+def approx_metrics(fn, x, U_dirs, batch_key):
     """
+    This function computes approximation metrics for how well the given U captures the Hessian of fn at points x.
     """
 
-    # Hessian at every x (B, d, d)
-    H = jax.vmap(jax.hessian(fn))(x)
+    b = x.shape[0]
+    keys = jax.random.split(batch_key, b)
+
+    # Hessian at every x (b, d, d)
+    H = jax.vmap(jax.hessian(fn))(x, keys)
+    # NOTE: for MC approximated refernce functions this is not reliable. The ground truth H needs to be exact.
 
     eps = 1e-12
     fro = jnp.maximum(jnp.linalg.norm(H, axis=(1,2)), eps)
     spec = jnp.maximum(jnp.linalg.norm(H, ord=2, axis=(1,2)), eps)
-    
 
     # Orthonormalize U (columns): Q: (d, k_ortho)
     Q, _ = jnp.linalg.qr(U_dirs.T)         # U_dirs: (k,d) -> Q: (d,k)
@@ -44,13 +48,18 @@ def approx_metrics(fn, x, U_dirs):
 
 
 
-def approx_metrics_per_x(fn, x, dirs_per_x):
+def approx_metrics_per_x(fn, x, dirs_per_x, batch_key):
     """
-    TODO
+    This function computes approximation metrics for how well the given per-input directions U_i capture the Hessian of fn at points x_i.
+    Used for perX variant
     """
+    
+    b = x.shape[0]
+    keys = jax.random.split(batch_key, b)
 
-    # Hessian at every x
-    H = jax.vmap(jax.hessian(fn))(x)                    # (B, d d)
+    # Hessian at every x (b, d, d)
+    H = jax.vmap(jax.hessian(fn))(x, keys)
+    # NOTE: for MC approximated refernce functions this is not reliable. The ground truth H needs to be exact.
     
     
     def per_sample(H_i, U_i):
