@@ -176,6 +176,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
     # use kichler base weights and modulate with learnable uncertainties
     base_weights = jnp.array([w_L0, w_L1, w_L2, w_L3])
+    #base_weights = jnp.array([1/4, 1/4, 1/4, 1/4])
     loss_vec = loss_vec * base_weights
 
     total, learned_weights = weighted_model.uw.combine(loss_vec, active_mask)
