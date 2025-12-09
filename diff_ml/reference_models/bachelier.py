@@ -99,6 +99,7 @@ class Bachelier(ReferenceModel):
     n_dims: int
     basket_dim: int
     weights: Float[Array, "basket_dim"]
+    n_paths_per_label: int
 
     t_exposure: float = 1.0
     t_maturity: float = 2.0
@@ -108,8 +109,9 @@ class Bachelier(ReferenceModel):
     use_antithetic: bool = True
     was_normalized: bool = False
 
-    def __init__(self, key, basket_dim, weights):
-        """TODO: ."""
+
+    def __init__(self, key, basket_dim, weights, n_paths_per_label):
+        
         if basket_dim != len(weights):
             val = f"Mismatch in number of dimensions ({basket_dim}) and number of weights ({weights}) given."
             raise ValueError(val)
@@ -121,6 +123,8 @@ class Bachelier(ReferenceModel):
         # scale weights to sum up to 1
         self.weights = weights / jnp.sum(weights)
         self.n_dims = basket_dim
+
+        self.n_paths_per_label = n_paths_per_label
 
 
         # fix cov once
@@ -175,6 +179,9 @@ class Bachelier(ReferenceModel):
 
 
     def analytic_basket_price_single_x(self, x, key) -> Scalar:
+        """
+        Analytic basket price for a single input x. No randomness/key used.
+        """
         basket = jnp.dot(x, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
         price = Bachelier.Call.price(
@@ -188,9 +195,10 @@ class Bachelier(ReferenceModel):
         
         
 
-    def simulated_basket_price_single_x(self, x, key) -> Scalar:
-        n_paths = 1000
-    
+    def simulated_basket_price_single_x(self, x, key, n_paths) -> Scalar:
+        """
+        Simulate the basket price for a single input x using MC with n_paths paths.
+        """
         x = jnp.asarray(x)
         cov = self.cov
     
@@ -215,16 +223,26 @@ class Bachelier(ReferenceModel):
     
 
 
+    
+
     def reference_fn(self):
-        #return self.analytic_basket_price_single_x 
-        return self.simulated_basket_price_single_x
+        """
+        Returns either the analytic or simulated basket price function, depending on n_paths_per_label.
+        """
+        if self.n_paths_per_label <= 0:
+            return self.analytic_basket_price_single_x 
+        else:
+            return partial(self.simulated_basket_price_single_x, n_paths=self.n_paths_per_label)
         
 
 
 
 
     def sample(self, key:PRNGKeyArray, n_samples:int, order=1) -> DifferentialData:
-        
+        """
+        Sample n_samples inputs and return the corresponding (analytic or MC) outputs and derivatives up to the specified order.
+        """
+
         cov = self.cov
         spots_0 = jnp.repeat(1.0, self.n_dims)
         t_delta = self.t_maturity - self.t_exposure
@@ -262,7 +280,9 @@ class Bachelier(ReferenceModel):
 
 
     def analytic(self, n_samples, minval=0.0, maxval=2, order=2) -> DifferentialData:
-        """TODO: ."""
+        """
+        Generate a set of analytically derived samples, prices, and derivatives for the Bachelier model.
+        """
 
         # adjust lower and upper for dimension
         adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
@@ -436,13 +456,13 @@ class Bachelier(ReferenceModel):
         fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
         # Plot the first subplot
-        axes[0].plot(baskets, y, '.', markersize=1)
+        axes[0].plot(baskets, y, '.', markersize=1, rasterized=True)
         axes[0].set_title(f"(a) Prices", y=fig_title_y, fontsize=15)
         axes[0].set_xlim(0, 2)
 
         # Plot the second subplot
         dydx_idx = 0
-        axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1)
+        axes[1].plot(baskets, dy[:, dydx_idx], '.', markersize=1, rasterized=True)
         axes[1].set_title(f"(b) Deltas", y=fig_title_y, fontsize=15)
         axes[1].set_xlim(0, 2)
     
@@ -451,7 +471,7 @@ class Bachelier(ReferenceModel):
             ddy = jnp.einsum('bij,i,j->b', ddy, w, w) / ((w @ w) ** 2)  # (b,)
             # Calculate and plot gammas in the third subplot
             #pred_gammas = jnp.sum(pred_ddyddx, axis=(1, 2))
-            axes[2].plot(baskets, ddy, '.', markersize=1)
+            axes[2].plot(baskets, ddy, '.', markersize=1, rasterized=True)
             axes[2].set_title(f"(c) Gammas", y=fig_title_y, fontsize=15)
             axes[2].set_xlim(0, 2)
 
@@ -459,7 +479,7 @@ class Bachelier(ReferenceModel):
             # Calculate and plot speeds in the fourth subplot
             speeds = jnp.einsum('bijk,i,j,k->b', dataset.dddy, w, w, w) / ((w @ w) ** 3)  # (b,)
             #fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-            axes[3].plot(baskets, speeds, '.', markersize=1)
+            axes[3].plot(baskets, speeds, '.', markersize=1, rasterized=True)
             axes[3].set_title(f"(d) Speeds", y=fig_title_y, fontsize=15)
             axes[3].set_xlim(0, 2)
         # Adjust the layout and save the figure to a PDF file
@@ -487,8 +507,8 @@ class Bachelier(ReferenceModel):
         fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
         # Plot the first subplot
-        axes[0].plot(baskets, pred_y, '.', markersize=1)
-        axes[0].plot(baskets, y_test, '.', markersize=1)
+        axes[0].plot(baskets, pred_y, '.', markersize=1, rasterized=True)
+        axes[0].plot(baskets, y_test, '.', markersize=1, rasterized=True)
         #axes[0].legend(['Pred Price', 'True Price'], loc='upper left')
         #axes[0].set_title(f"Prices \n rmse: {rmse(pred_y, y_test)}")
         axes[0].set_title(f"(a) Prices", y=title_y, fontsize=15)
@@ -496,8 +516,8 @@ class Bachelier(ReferenceModel):
 
         # Plot the second subplot
         dydx_idx = 0
-        axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1)
-        axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1)
+        axes[1].plot(baskets, pred_dydx[:, dydx_idx], '.', markersize=1, rasterized=True)
+        axes[1].plot(baskets, dydx_test[:, dydx_idx], '.', markersize=1, rasterized=True)
         #axes[1].legend(['Pred Delta', 'True Delta'], loc='upper left')
         #axes[1].set_title(f"Deltas\nrmse: {rmse(pred_dydx, dydx_test)}")
         axes[1].set_title(f"(b) Deltas", y=title_y, fontsize=15)
@@ -511,8 +531,8 @@ class Bachelier(ReferenceModel):
             #gammas_test = jnp.einsum('bij,i,j->b', gammas_test, w, w) / ((w @ w) ** 2)  # (b,)
             #pred_gammas = jnp.einsum('bij,i,j->b', pred_ddyddx, w, w) / ((w @ w) ** 2)  # (b,)
 
-            axes[2].plot(baskets, pred_gammas_plot, '.', markersize=1, label='Pred Gamma')
-            axes[2].plot(baskets, gammas_test_plot, '.', markersize=1, label='True Gamma')
+            axes[2].plot(baskets, pred_gammas_plot, '.', markersize=1, label='Pred Gamma', rasterized=True)
+            axes[2].plot(baskets, gammas_test_plot, '.', markersize=1, label='True Gamma', rasterized=True)
             #axes[2].legend()
             #axes[2].set_title(f"Gammas\nrmse: {rmse(pred_ddyddx, gammas_test)}")
             axes[2].set_title(f"(c) Gammas", y=title_y, fontsize=15)
@@ -526,8 +546,8 @@ class Bachelier(ReferenceModel):
             #speeds_test = jnp.einsum('bijk,i,j,k->b', speeds_test, w, w, w) / ((w @ w) ** 3)  # (b,)
             #pred_speeds = jnp.einsum('bijk,i,j,k->b', pred_ddyddx, w, w, w) / ((w @ w) ** 3)  # (b,)
 
-            axes[3].plot(baskets, pred_speeds_plot, '.', markersize=1, label='Pred Speed')
-            axes[3].plot(baskets, speeds_test_plot, '.', markersize=1, label='True Speed')
+            axes[3].plot(baskets, pred_speeds_plot, '.', markersize=1, label='Pred Speed', rasterized=True)
+            axes[3].plot(baskets, speeds_test_plot, '.', markersize=1, label='True Speed', rasterized=True)
             #axes[3].legend()
             #axes[3].set_title(f"Speeds\nrmse: {rmse(pred_dddydddx, speeds_test)}")
             axes[3].set_title(f"(d) Speeds", y=title_y, fontsize=15)

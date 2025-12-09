@@ -1,23 +1,9 @@
 """
-Autodiff utilities for Hessian-vector products and third-derivative-vector products
+Algorithmic Differentiation utilities for Hessian-vector products and third-derivative-vector-vector products
 """
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-
-
-
-#def hvp(f, x, v):
-#    """
-#    Compute Hessian-vector product: H(x) @ v
-#    Args:
-#        f: scalar-valued function f: R^d -> R
-#        x: input point x (d)
-#        v: direction vector  R^d
-#    Returns:
-#        hvp: [d]
-#    """
-#    return jax.jvp(lambda x_: eqx.filter_grad(f)(x_), (x,), (v,))[1]
 
 
 
@@ -45,20 +31,6 @@ def hvp_cond(f, x, v, eval_hvp):
 
 
 
-#def hvp_batch(f, inputs, directions):
-#    """
-#    Compute Hessian-vector products: H(x_i) @ v_j for all points into all directions
-#    Args:
-#        f: scalar-valued function f: R^d -> R
-#        inputs: [b, d]
-#        directions: [k, d]
-#    Returns:
-#        hvps: [b, k, d]
-#    """
-#    def hvp_fn(x, v):
-#        return hvp(f, x, v)
-#    batched = eqx.filter_vmap(eqx.filter_vmap(hvp_fn, in_axes=(0, None)), in_axes=(None, 0))
-#    return jnp.transpose(batched(inputs, directions), (1, 0, 2))
 
 def hvp_batch(f, inputs, directions, batch_key=None):
     """
@@ -110,25 +82,6 @@ def hvp_batch_cond(f, inputs, directions, eval_hvp):
 
 
 
-#def hvp_batch_per_input(f, inputs, directions):
-#    """
-#    Compute Hessian-vector products H(x_i) @ v_{i,j} for each input x_i and its own set of k directions v_{i,j}.
-#    Args:
-#        f: scalar-valued function f: R^d -> R
-#        inputs: [b, d]
-#        directions: [b, k, d]
-#    Returns:
-#        hvps: [b, k, d]
-#    """
-#    def hvp_fn(x, v):
-#        return hvp(f, x, v)  # returns H(x) @ v
-#
-#    def per_sample_hvp(xi, vis):
-#        return jax.vmap(lambda v: hvp_fn(xi, v))(vis)  # shape (k, d)
-#
-#    return jax.vmap(per_sample_hvp)(inputs, directions)  # shape (b, k, d)
-
-
 def hvp_batch_per_input(f, inputs, directions, batch_key=None):
     """
     Compute Hessian-vector products H(x_i) @ v_{i,j} for each input x_i and its own set of k directions v_{i,j}.
@@ -158,27 +111,6 @@ def hvp_batch_per_input(f, inputs, directions, batch_key=None):
     
 
 
-#def t3vp(f, x, v, w):
-#    """
-#    Third-derivative with two directions
-#    Args:
-#        f: scalar-valued function f: R^d -> R
-#        x: input point x (d)
-#        v: direction vector  (d)
-#        w: direction vector  (d)
-#    Returns:
-#        tvp: [d]
-#    """
-#    # g(x) = D_w f(x) (scalar)
-#    def g(x_):
-#        return jax.jvp(f, (x_,), (w,))[1]
-#    # h(x) = D_v g(x) = D_v D_w f(x) (scalar)
-#    def h(x_):
-#        return jax.jvp(g, (x_,), (v,))[1]
-#    
-#    # return D h(x) (d)
-#    return eqx.filter_grad(h)(x)
-
 def t3vp(f, x, v, w, *f_args):
     """
     Third-derivative with two directions
@@ -202,34 +134,6 @@ def t3vp(f, x, v, w, *f_args):
     
     # return D h(x) (d)
     return eqx.filter_grad(h)(x)
-
-#return jax.jvp(lambda x_: eqx.filter_grad(f)(x_, *f_args), (x,), (v,))[1]
-
-
-
-#def t3vp_batch(f, inputs, v_dirs, w_dirs):
-#    """
-#    Third derivative with two directions, batched over inputs and directions
-#    Args:
-#        f: scalar-valued function f: R^d -> R
-#        inputs: [b, d]
-#        v_dirs: [k, d]
-#        w_dirs: [k, d]
-#    Returns:
-#        tvps: [b, k, k, d]
-#    """
-#    def t3vp_vw(x, v, w):
-#        return t3vp(f, x, v, w)
-#
-#    # map over inputs (b) and v (k) and w (k)
-#    batched = eqx.filter_vmap(                        # over v
-#                eqx.filter_vmap(                      # over w
-#                    eqx.filter_vmap(t3vp_vw, in_axes=(0, None, None)),  # over inputs
-#                    in_axes=(None, None, 0)),
-#               in_axes=(None, 0, None))
-#    # result shape: [k, k, b, d]
-#    out = batched(inputs, v_dirs, w_dirs)
-#    return jnp.transpose(out, (2, 0, 1, 3))           # [b, k, k, d]
 
 
 

@@ -4,7 +4,6 @@ dynamic = ["version"]
 description = "Differential Machine Learning for Jax"
 readme = "README.md"
 requires-python = ">=3.9, <3.12"
-license = {text = "MIT License"}
 keywords = [
     "jax",
     "differential-machine-learning",
@@ -12,6 +11,7 @@ keywords = [
     "neural-networks",
 ]
 authors = [
+  { name = "Johannes Wilhelm", email = "contact@johannes-wilhelm.com" },
   { name = "Neil Kichler", email = "neil.kichler@gmail.com" },
 ]
 classifiers = [
@@ -20,7 +20,6 @@ classifiers = [
   "Intended Audience :: Financial and Insurance Industry",
   "Intended Audience :: Information Technology",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
@@ -37,7 +36,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/neilkichler/diff-ml"
+Repository = "https://github.com/JoWilhelm/diff-ml-rand-svd"
 
 [build-system]
 requires = ["hatchling"]
@@ -145,9 +144,6 @@ unfixable = [
   "F401",
 ]
 
-[tool.ruff.lint.extend-per-file-ignores]
-"tests/**/*" = ["D", "F401"]
-
 [tool.ruff.lint.isort]
 known-first-party = ["diff-ml"]
 lines-after-imports = 2
@@ -160,16 +156,12 @@ convention = "google"
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[tool.ruff.lint.per-file-ignores]
-# Tests can use magic values, assertions, and relative imports
-"tests/**/*" = ["PLR2004", "S101", "TID252"]
-
 [tool.pyright]
 reportIncompatibleMethodOverride = true
-include = ["diff_ml", "tests"]
+include = ["diff_ml"]
 
 [tool.coverage.run]
-source_pkgs = ["diff_ml", "tests"]
+source_pkgs = ["diff_ml"]
 branch = true
 parallel = true
 omit = [
@@ -178,7 +170,6 @@ omit = [
 
 [tool.coverage.paths]
 diff_ml = ["diff_ml", "*/diff-ml/diff_ml"]
-tests = ["tests", "*/diff-ml/tests"]
 
 [tool.coverage.report]
 exclude_lines = [

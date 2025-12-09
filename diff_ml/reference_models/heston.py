@@ -161,7 +161,7 @@ class Heston(ReferenceModel):
 
 
 
-#
+## NOTE: Maybe implemnt MC simulated version later
 #
 #    def payoff_basket(self, spot_ends):
 #        """
@@ -291,30 +291,6 @@ class Heston(ReferenceModel):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-   
-    
-    
-
-
-
-
-
-
-
-
-
     
     def normalized_wrapper(self, x_flat_normalized, key=None) -> Scalar:
         # un-normalize inputs x
@@ -324,9 +300,7 @@ class Heston(ReferenceModel):
 
         # call in raw space
         y = self.basket_price_x_flat(x_raw_flat)
-        
-        
-        
+                
         # re-normalize y
         y_normalized = (y - self.y_mean) / self.y_std
         return y_normalized    
