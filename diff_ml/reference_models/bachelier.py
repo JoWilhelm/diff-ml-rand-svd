@@ -99,6 +99,7 @@ class Bachelier(ReferenceModel):
     n_dims: int
     basket_dim: int
     weights: Float[Array, "basket_dim"]
+    n_paths_per_label: int
 
     t_exposure: float = 1.0
     t_maturity: float = 2.0
@@ -108,7 +109,8 @@ class Bachelier(ReferenceModel):
     use_antithetic: bool = True
     was_normalized: bool = False
 
-    def __init__(self, key, basket_dim, weights):
+
+    def __init__(self, key, basket_dim, weights, n_paths_per_label):
         """TODO: ."""
         if basket_dim != len(weights):
             val = f"Mismatch in number of dimensions ({basket_dim}) and number of weights ({weights}) given."
@@ -121,6 +123,8 @@ class Bachelier(ReferenceModel):
         # scale weights to sum up to 1
         self.weights = weights / jnp.sum(weights)
         self.n_dims = basket_dim
+
+        self.n_paths_per_label = n_paths_per_label
 
 
         # fix cov once
@@ -188,8 +192,7 @@ class Bachelier(ReferenceModel):
         
         
 
-    def simulated_basket_price_single_x(self, x, key) -> Scalar:
-        n_paths = 1
+    def simulated_basket_price_single_x(self, x, key, n_paths) -> Scalar:
     
         x = jnp.asarray(x)
         cov = self.cov
@@ -215,9 +218,14 @@ class Bachelier(ReferenceModel):
     
 
 
+    
+
     def reference_fn(self):
-        return self.analytic_basket_price_single_x 
-        #return self.simulated_basket_price_single_x
+
+        if self.n_paths_per_label <= 0:
+            return self.analytic_basket_price_single_x 
+        else:
+            return partial(self.simulated_basket_price_single_x, n_paths=self.n_paths_per_label)
         
 
 

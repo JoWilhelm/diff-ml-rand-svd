@@ -52,10 +52,12 @@ key, subkey = jrandom.split(key)
 #)
 
 basket_dim = 7
+n_paths = 0 # number of MC paths per label. Set to 0 to use analytic formula.
 ref_model = Bachelier(
     subkey,
     basket_dim=basket_dim, 
-    weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0)
+    weights=jrandom.uniform(subkey, shape=(basket_dim,), minval=1.0, maxval=10.0),
+    n_paths_per_label=n_paths
 )
 
 
