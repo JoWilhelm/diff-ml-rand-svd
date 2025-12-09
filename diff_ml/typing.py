@@ -1,9 +1,18 @@
 from jaxtyping import Array, Float
 from typing_extensions import TypeAlias
+from typing import Optional
 
 
 class DifferentialData():
-    def __init__(self, order: int, x: Float[Array, "n*d"], y: Float[Array, "n"], dy: Float[Array, "n*d"], ddy: Float[Array, "n*d*d"] | None = None, dddy: Float[Array, "n*d*d*d"] | None = None):
+    def __init__(
+            self, 
+            order: int, 
+            x: Float[Array, "n*d"], 
+            y: Float[Array, "n"], 
+            dy: Float[Array, "n*d"], 
+            ddy: Optional[Float[Array, "n*d*d"]] = None, 
+            dddy: Optional[Float[Array, "n*d*d*d"]] = None
+        ):
         self.order = order
         self.x = x
         self.y = y

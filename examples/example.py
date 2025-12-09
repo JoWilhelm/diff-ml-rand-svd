@@ -94,7 +94,7 @@ learnable_loss_weights = True
 do_approx_metrics = False
 
 
-n_epochs = 10
+n_epochs = 100
 n_batches_per_epoch = 64
 batch_size = 128
 lr = 1e-3

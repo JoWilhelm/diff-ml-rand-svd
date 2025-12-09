@@ -1,4 +1,4 @@
-
+from __future__ import annotations
 import jax
 from jax import vmap
 from jax import random as jrandom
@@ -43,7 +43,6 @@ def first_order_loss_fn(model, batch: DifferentialData):
 def second_order_loss_fn(model: eqx.nn.MLP, batch: DifferentialData, key: PRNGKeyArray, ref_model: ReferenceModel, streaming_dirs: Array | None, streaming_svals: Array | None, variant: str, k: int, p: int, q: int):
     """
     2nd order loss function with different ways to get directions to compare HVPs into.
-    TODO
     """
 
     if not variant in ["random", "pcady", "batchSVD", "3rdBatchSVD", "perXSVD", "streaming", "fullHessian"]:

@@ -37,7 +37,7 @@ def cosine_loss(p, t, eps=1e-8):
 
 def wse(y_pred, y_true, w):
     """
-    TODO
+    Weighted squared error loss.
     """
     diff2 = (y_pred - y_true) ** 2       # (b, k, d)
     per_dir = jnp.mean(diff2, axis=-1)   # (b, k), average over d
@@ -59,7 +59,7 @@ class Range(eqx.Module):
 
 class MakeScalar(eqx.Module):
     """
-    TODO
+    Wraps a model to produce a scalar output
     """
     model: eqx.Module
     def __call__(self, *args, **kwargs):

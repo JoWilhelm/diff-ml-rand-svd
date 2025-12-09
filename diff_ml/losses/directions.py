@@ -67,8 +67,7 @@ def hvp_power_iterated_sketch(f, x, sketch_directions, q, key):
 @eqx.filter_jit
 def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
     """
-    TODO
-    Randomized SVD to get k top singular directions of the Hessian of f averaged over points x.
+    Randomized SVD to get top k approximate singular directions of the Hessian of f averaged over points x.
     """
 
     s = k + oversampling_p  # total number of sketch directions
@@ -143,8 +142,7 @@ def get_rand_SVD_directions(ref_model, f, x, k, key, oversampling_p=0, power_ite
 @eqx.filter_jit
 def get_rand_SVD_directions_per_x(ref_model, f, X, k, key, oversampling_p=0, power_iteration_q=0, kappa=0.95):
     """
-    TODO
-    Randomized SVD to get k top singular directions of the Hessian of f for each point in X.
+    Randomized SVD to get top k approximate singular directions of the Hessian of f for each point in X.
     """
 
     b = X.shape[0]
@@ -304,7 +302,7 @@ class StreamingHessianSketch(eqx.Module):
 @eqx.filter_jit
 def get_3rd_rand_SVD_directions(ref_model, f, x, U_H, k, key):
     """
-    TODO
+    Get top k approximate singular directions of the mode-one unfolding of the 3rd-order derivative Tensor of f averaged over points x.
     """
 
     d = ref_model.n_dims

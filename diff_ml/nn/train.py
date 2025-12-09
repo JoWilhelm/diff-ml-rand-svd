@@ -1,3 +1,4 @@
+from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import jax.random as jrandom
@@ -37,28 +38,15 @@ class UncertaintyWeighter(eqx.Module):
         """
         s = jnp.stack([self.s0, self.s1, self.s2, self.s3])  # (4,)
         w = 0.5 * jnp.exp(-s)                                # (4,)
-
         
         w_active = w * active_mask
-        
 
         # total loss over active tasks: sum( w*L + 0.5*s )
         # where the second term prevents s -> -inf
         total = jnp.sum(w_active * losses) + 0.5 * jnp.sum(s * active_mask)  
 
-        #total = jnp.sum(base_weights * w * losses * active_mask) + 0.5 * jnp.sum(s * active_mask)
-
-
-        ## normalized effective weights for display
-        #denom = jnp.sum(w_active) + 1e-12
-        #norm_w = w_active / denom
-        
         return total, w_active
     
-
-
-
-
 
 class WeightedSurrogate(eqx.Module):
     """
@@ -70,9 +58,6 @@ class WeightedSurrogate(eqx.Module):
     def __call__(self, *args, **kwargs):
         # normal call to the underlying MLP
         return self.base(*args, **kwargs)
-
-
-
 
 
 
@@ -123,7 +108,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
     #### ---- combine losses ---- ####
 
-    # kichler weights (default setting, alpha=1, beta=2k/d^2, gamma=6(k^2)/d^3)
+    # base-weights (default setting, alpha=1, beta=2k/d^2, gamma=6(k^2)/d^3)
     w_L0 = 1.0
     w_L1 = ref_model.n_dims
     w_L2 = 2*k if not variant == "fullHessian" else ref_model.n_dims
@@ -174,7 +159,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
     else:
         active_mask = jnp.array([1, 1, 1, 0])
 
-    # use kichler base weights and modulate with learnable uncertainties
+    # use base-weights and modulate with learnable uncertainties
     base_weights = jnp.array([w_L0, w_L1, w_L2, w_L3])
     #base_weights = jnp.array([1/4, 1/4, 1/4, 1/4])
     loss_vec = loss_vec * base_weights
@@ -196,7 +181,7 @@ def total_loss_fn(weighted_model: WeightedSurrogate, batch: DifferentialData, ba
 
 def make_train_step(ref_model: ReferenceModel, optim, batch_size: int, variant: str, k: int, p: int, q: int, learnable_loss_weights: bool = True, do_approx_metrics: bool = False):
     """
-    TODO
+    Create a JIT-compiled training step function, closing over all static parameters.
     """
 
     @eqx.filter_jit
@@ -248,7 +233,7 @@ def train(
     do_test_eval: bool = True
 ) -> Tuple[WeightedSurrogate, list[dict], StreamingHessianSketch | None, float]:
     """
-    TODO
+    Train the model and evaluate on test data at the end of each epoch.
     """
 
     if do_test_eval and (test_data.dy is None or test_data.ddy is None):

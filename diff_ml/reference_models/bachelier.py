@@ -111,7 +111,7 @@ class Bachelier(ReferenceModel):
 
 
     def __init__(self, key, basket_dim, weights, n_paths_per_label):
-        """TODO: ."""
+        
         if basket_dim != len(weights):
             val = f"Mismatch in number of dimensions ({basket_dim}) and number of weights ({weights}) given."
             raise ValueError(val)
@@ -179,6 +179,9 @@ class Bachelier(ReferenceModel):
 
 
     def analytic_basket_price_single_x(self, x, key) -> Scalar:
+        """
+        Analytic basket price for a single input x. No randomness/key used.
+        """
         basket = jnp.dot(x, self.weights).reshape((-1, 1))
         time_to_maturity = self.t_maturity - self.t_exposure
         price = Bachelier.Call.price(
@@ -193,7 +196,9 @@ class Bachelier(ReferenceModel):
         
 
     def simulated_basket_price_single_x(self, x, key, n_paths) -> Scalar:
-    
+        """
+        Simulate the basket price for a single input x using MC with n_paths paths.
+        """
         x = jnp.asarray(x)
         cov = self.cov
     
@@ -221,7 +226,9 @@ class Bachelier(ReferenceModel):
     
 
     def reference_fn(self):
-
+        """
+        Returns either the analytic or simulated basket price function, depending on n_paths_per_label.
+        """
         if self.n_paths_per_label <= 0:
             return self.analytic_basket_price_single_x 
         else:
@@ -232,7 +239,10 @@ class Bachelier(ReferenceModel):
 
 
     def sample(self, key:PRNGKeyArray, n_samples:int, order=1) -> DifferentialData:
-        
+        """
+        Sample n_samples inputs and return the corresponding (analytic or MC) outputs and derivatives up to the specified order.
+        """
+
         cov = self.cov
         spots_0 = jnp.repeat(1.0, self.n_dims)
         t_delta = self.t_maturity - self.t_exposure
@@ -270,7 +280,9 @@ class Bachelier(ReferenceModel):
 
 
     def analytic(self, n_samples, minval=0.0, maxval=2, order=2) -> DifferentialData:
-        """TODO: ."""
+        """
+        Generate a set of analytically derived samples, prices, and derivatives for the Bachelier model.
+        """
 
         # adjust lower and upper for dimension
         adj = 1 + 0.5 * jnp.sqrt((self.n_dims - 1) * (maxval - minval) / 12)
