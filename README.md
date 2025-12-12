@@ -1,11 +1,11 @@
 # Second-Order Differential Machine Learning
 This project builds on [diff-ml](https://github.com/neilkichler/diff-ml) developed by Neil Kicher as part of his master's thesis.
-For detailed background information, consider looking into:
+For detailed background information, we refer to:
 
 https://neilkichler.github.io/master-thesis/Thesis.pdf
 
 ## Content
-The package currently implements the core functions needed for Sobolev Training / Differential Machine Learning.
+The package implements functionalities for Higher-Order Sobobolev Training / Differential Machine Learning.
 
 ## Installation
 Clone the repo and execute the following inside the root folder.
