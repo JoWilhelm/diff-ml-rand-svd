@@ -1,4 +1,4 @@
-# Second-Order Differential Machine Learning
+# Efficient Higher-Order Sobolev Training
 This project builds on [diff-ml](https://github.com/neilkichler/diff-ml) developed by Neil Kicher as part of his master's thesis.
 For detailed background information, we refer to:
 
